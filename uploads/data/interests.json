@@ -25,5 +25,14 @@
     "notes": "Interested in purchasing 100 kg batch immediately for pharmaceutical extraction.",
     "created_at": "2026-10-25T15:05:37.501Z",
     "updated_at": "2026-10-25T15:05:37.501Z"
+  },
+  {
+    "id": "355cf055-3679-4301-8935-ff8035349069",
+    "crop_id": "fd80518e-f7d0-4f40-a9fb-dd3fa5541bf8",
+    "buyer_id": "755555b6-e9da-41b1-803a-3b8f62029004",
+    "rating": 5,
+    "notes": "Interested in purchasing 100 kg batch immediately for pharmaceutical extraction.",
+    "created_at": "2026-10-25T17:11:40.487Z",
+    "updated_at": "2026-10-25T17:11:40.487Z"
   }
 ]

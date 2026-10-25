@@ -49,5 +49,22 @@
     "status": "available",
     "created_at": "2026-10-25T15:05:31.603Z",
     "updated_at": "2026-10-25T15:05:31.604Z"
+  },
+  {
+    "id": "fd80518e-f7d0-4f40-a9fb-dd3fa5541bf8",
+    "farmer_id": "3f599da5-f7af-4be5-b3dc-f336aed94163",
+    "crop_name": "Himalayan Kutki Root",
+    "crop_type": "organic",
+    "quantity": 150,
+    "quantity_unit": "kg",
+    "price": 5500,
+    "description": "Wild harvested Himalayan Kutki rhizomes with HPLC verified Picroside content.",
+    "photos": [
+      "/uploads/crops/kutki-sample-1.jpg",
+      "/uploads/crops/kutki-sample-2.jpg"
+    ],
+    "status": "available",
+    "created_at": "2026-10-25T17:11:33.910Z",
+    "updated_at": "2026-10-25T17:11:33.911Z"
   }
 ]
