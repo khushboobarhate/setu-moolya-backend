@@ -1,90 +1,137 @@
 -- ==============================================================================
--- SETUMOOLYA (सेतुमूल्य) - SUPABASE DATABASE SCHEMA INITIALIZATION
--- Run this script in your Supabase SQL Editor:
--- https://supabase.com/dashboard/project/_/sql
+-- SETUMOOLYA (सेतुमूल्य) – SUPABASE DATABASE SCHEMA v2.0
+-- Modules: Admin, Farmer, Buyer
+-- Run this in your Supabase SQL Editor:
+--   https://supabase.com/dashboard/project/_/sql
 -- ==============================================================================
 
--- 1. Enable UUID Extension (if not already enabled)
+-- 1. Enable UUID Extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. Define Enum Types for User Roles and Verification
-DO $$ 
+-- ==============================================================================
+-- 2. ENUM TYPES
+-- ==============================================================================
+
+DO $$
 BEGIN
+    -- User roles (Admin, Farmer, Buyer only)
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-        CREATE TYPE user_role AS ENUM (
-            'farmer',        -- Forager / Herbal Cultivator
-            'fpo',           -- Farmer Producer Organisation / Village Collective
-            'buyer',         -- Domestic & Global B2B Brands / Pharma / Nutraceutical
-            'lab',           -- Certified Quality Testing Lab (AYUSH / NABL)
-            'logistics',     -- Cold-chain & Export Logistics Partner
-            'admin'          -- Platform Admin & Forest/NGO Agronomist
-        );
+        CREATE TYPE user_role AS ENUM ('admin', 'farmer', 'buyer');
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kyc_status') THEN
-        CREATE TYPE kyc_status AS ENUM ('pending', 'verified', 'rejected');
+    -- Registration request status
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'registration_status') THEN
+        CREATE TYPE registration_status AS ENUM ('pending', 'approved', 'rejected');
     END IF;
 END $$;
 
--- 3. Create Public Profiles Table linked to Supabase auth.users
+-- ==============================================================================
+-- 3. PROFILES TABLE  (Stores approved users only)
+-- ==============================================================================
+
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT NOT NULL UNIQUE,
-    full_name TEXT NOT NULL,
-    phone TEXT,
-    role user_role NOT NULL DEFAULT 'farmer',
-    organization_name TEXT,                             -- FPO name, Company name, or Lab name
-    location JSONB DEFAULT '{
-        "state": "",
-        "district": "",
-        "village": "",
-        "pin_code": "",
-        "gps": {"lat": null, "lng": null}
-    }'::jsonb,
-    bio_specialization TEXT,                           -- e.g. "Kutki, Gucchi, Ashwagandha"
-    bank_details JSONB DEFAULT '{
-        "account_holder_name": "",
-        "account_number": "",
-        "ifsc_code": "",
-        "upi_id": ""
-    }'::jsonb,
-    kyc_status kyc_status NOT NULL DEFAULT 'pending',
-    is_verified BOOLEAN NOT NULL DEFAULT false,
-    avatar_url TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+    id                      UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email                   TEXT NOT NULL UNIQUE,            -- Login email (system-generated on approval)
+    full_name               TEXT NOT NULL,
+    role                    user_role NOT NULL DEFAULT 'farmer',
+    mobile_number           TEXT,                            -- Original registration phone
+    nationality             TEXT,
+    state                   TEXT,
+    taluka                  TEXT,
+    city                    TEXT,
+    full_address            TEXT,
+    land_location           TEXT,                            -- Farmer-only field
+    preferred_language      TEXT DEFAULT 'en',
+    photo_url               TEXT,                            -- Path to passport-size photo
+    is_approved             BOOLEAN NOT NULL DEFAULT false,
+    registration_request_id UUID,                            -- FK to registration_requests
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
 
--- Indexing for fast lookups
-CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
-CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
-CREATE INDEX IF NOT EXISTS idx_profiles_kyc ON public.profiles(kyc_status);
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_profiles_role       ON public.profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_email      ON public.profiles(email);
+CREATE INDEX IF NOT EXISTS idx_profiles_approved   ON public.profiles(is_approved);
 
--- 4. Automatic 'updated_at' Timestamp Trigger
+-- ==============================================================================
+-- 4. REGISTRATION REQUESTS TABLE  (Pending / Rejected requests from Farmers & Buyers)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.registration_requests (
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    role                    user_role NOT NULL,
+    full_name               TEXT NOT NULL,
+    age                     INTEGER,
+    mobile_number           TEXT NOT NULL,
+    email                   TEXT,                            -- Optional: contact email provided during registration
+    nationality             TEXT,
+    state                   TEXT,
+    taluka                  TEXT,
+    city                    TEXT,
+    full_address            TEXT,
+    land_location           TEXT,                            -- Farmer-only
+    preferred_language      TEXT DEFAULT 'en',
+    photo_url               TEXT,                            -- Path to uploaded passport photo
+    status                  registration_status NOT NULL DEFAULT 'pending',
+    approved_login_email    TEXT,                            -- Email created on approval
+    approved_user_id        UUID,                            -- auth.users UUID after approval
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_reg_requests_status  ON public.registration_requests(status);
+CREATE INDEX IF NOT EXISTS idx_reg_requests_role    ON public.registration_requests(role);
+CREATE INDEX IF NOT EXISTS idx_reg_requests_phone   ON public.registration_requests(mobile_number);
+
+-- ==============================================================================
+-- 5. OTP RECORDS TABLE  (Short-lived OTP for mobile verification)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.otp_records (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    phone       TEXT NOT NULL UNIQUE,          -- One active OTP per phone
+    otp         TEXT NOT NULL,
+    is_used     BOOLEAN NOT NULL DEFAULT false,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_otp_phone ON public.otp_records(phone);
+
+-- ==============================================================================
+-- 6. AUTOMATIC updated_at TRIGGER
+-- ==============================================================================
+
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = timezone('utc'::text, now());
+    NEW.updated_at = timezone('utc', now());
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trigger_set_profiles_updated_at ON public.profiles;
-CREATE TRIGGER trigger_set_profiles_updated_at
-BEFORE UPDATE ON public.profiles
-FOR EACH ROW
-EXECUTE FUNCTION public.handle_updated_at();
+-- Apply trigger to profiles
+DROP TRIGGER IF EXISTS trg_profiles_updated_at ON public.profiles;
+CREATE TRIGGER trg_profiles_updated_at
+    BEFORE UPDATE ON public.profiles
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
--- 5. Automatic Profile Creation on Supabase Auth SignUp
--- Whenever a user is registered via Supabase Auth, this function copies their metadata into public.profiles
+-- Apply trigger to registration_requests
+DROP TRIGGER IF EXISTS trg_reg_requests_updated_at ON public.registration_requests;
+CREATE TRIGGER trg_reg_requests_updated_at
+    BEFORE UPDATE ON public.registration_requests
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- ==============================================================================
+-- 7. AUTO-CREATE PROFILE ON SUPABASE AUTH SIGNUP
+-- ==============================================================================
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
     assigned_role user_role := 'farmer';
-    user_full_name TEXT;
-    user_phone TEXT;
-    user_org TEXT;
-    user_spec TEXT;
 BEGIN
     -- Safely parse role from user metadata
     IF NEW.raw_user_meta_data->>'role' IS NOT NULL THEN
@@ -95,81 +142,144 @@ BEGIN
         END;
     END IF;
 
-    user_full_name := COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1));
-    user_phone := NEW.raw_user_meta_data->>'phone';
-    user_org := NEW.raw_user_meta_data->>'organization_name';
-    user_spec := NEW.raw_user_meta_data->>'bio_specialization';
-
     INSERT INTO public.profiles (
         id,
         email,
         full_name,
-        phone,
         role,
-        organization_name,
-        bio_specialization,
+        mobile_number,
+        nationality,
+        state,
+        taluka,
+        city,
+        full_address,
+        land_location,
+        preferred_language,
+        photo_url,
+        is_approved,
         created_at,
         updated_at
     )
     VALUES (
         NEW.id,
         NEW.email,
-        user_full_name,
-        user_phone,
+        COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
         assigned_role,
-        user_org,
-        user_spec,
-        timezone('utc'::text, now()),
-        timezone('utc'::text, now())
+        COALESCE(NEW.raw_user_meta_data->>'phone', NULL),
+        NULL, NULL, NULL, NULL, NULL, NULL,
+        COALESCE(NEW.raw_user_meta_data->>'preferred_language', 'en'),
+        NULL,
+        assigned_role = 'admin',   -- Admin is auto-approved; others need approval
+        timezone('utc', now()),
+        timezone('utc', now())
     )
     ON CONFLICT (id) DO UPDATE SET
-        email = EXCLUDED.email,
-        full_name = EXCLUDED.full_name,
-        phone = COALESCE(EXCLUDED.phone, public.profiles.phone),
-        organization_name = COALESCE(EXCLUDED.organization_name, public.profiles.organization_name),
-        updated_at = timezone('utc'::text, now());
+        email       = EXCLUDED.email,
+        full_name   = EXCLUDED.full_name,
+        updated_at  = timezone('utc', now());
 
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Trigger to execute after user insert in auth.users
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 6. Row Level Security (RLS) Configuration
+-- ==============================================================================
+-- 8. ROW LEVEL SECURITY (RLS)
+-- ==============================================================================
+
+-- ---- Profiles ----
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- Policy 1: Authenticated users can read all active profiles (e.g. buyers browsing FPOs, FPOs seeing labs)
-CREATE POLICY "Profiles are readable by authenticated users"
-ON public.profiles FOR SELECT
-TO authenticated
-USING (true);
+-- Admins can read all profiles
+CREATE POLICY "Admin can view all profiles"
+    ON public.profiles FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles p
+            WHERE p.id = auth.uid() AND p.role = 'admin'
+        )
+    );
 
--- Policy 2: Users can update their own profile fields (except role and is_verified)
-CREATE POLICY "Users can update their own profile"
-ON public.profiles FOR UPDATE
-TO authenticated
-USING (auth.uid() = id)
-WITH CHECK (auth.uid() = id);
+-- Users can view their own profile
+CREATE POLICY "Users can view own profile"
+    ON public.profiles FOR SELECT
+    TO authenticated
+    USING (auth.uid() = id);
 
--- Policy 3: Allow users to insert their own profile record if missing
-CREATE POLICY "Users can insert their own profile"
-ON public.profiles FOR INSERT
-TO authenticated
-WITH CHECK (auth.uid() = id);
+-- Users can update their own profile (non-critical fields)
+CREATE POLICY "Users can update own profile"
+    ON public.profiles FOR UPDATE
+    TO authenticated
+    USING (auth.uid() = id)
+    WITH CHECK (auth.uid() = id);
 
--- 7. Verification function for Admin to approve KYC / Verify Users
-CREATE OR REPLACE FUNCTION public.verify_user_kyc(target_user_id UUID, new_status kyc_status, verification_flag BOOLEAN)
-RETURNS VOID AS $$
+-- Service role (backend) can insert profiles
+CREATE POLICY "Service role can insert profiles"
+    ON public.profiles FOR INSERT
+    TO service_role
+    WITH CHECK (true);
+
+-- Service role can update all profiles (for admin approval flow)
+CREATE POLICY "Service role can update all profiles"
+    ON public.profiles FOR UPDATE
+    TO service_role
+    USING (true);
+
+-- ---- Registration Requests ----
+ALTER TABLE public.registration_requests ENABLE ROW LEVEL SECURITY;
+
+-- Only service role (backend) can read/write registration requests
+CREATE POLICY "Service role manages registration requests"
+    ON public.registration_requests FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+-- Admins can read registration requests
+CREATE POLICY "Admins can read registration requests"
+    ON public.registration_requests FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles p
+            WHERE p.id = auth.uid() AND p.role = 'admin'
+        )
+    );
+
+-- ---- OTP Records ----
+ALTER TABLE public.otp_records ENABLE ROW LEVEL SECURITY;
+
+-- Only service role manages OTPs
+CREATE POLICY "Service role manages OTPs"
+    ON public.otp_records FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+-- ==============================================================================
+-- 9. CLEANUP FUNCTION – Purge expired/used OTPs (run periodically)
+-- ==============================================================================
+
+CREATE OR REPLACE FUNCTION public.cleanup_expired_otps()
+RETURNS void AS $$
 BEGIN
-    UPDATE public.profiles
-    SET 
-        kyc_status = new_status,
-        is_verified = verification_flag,
-        updated_at = timezone('utc'::text, now())
-    WHERE id = target_user_id;
+    DELETE FROM public.otp_records
+    WHERE is_used = true OR expires_at < timezone('utc', now());
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ==============================================================================
+-- 10. SEED ADMIN USER  (Run ONCE manually after first deployment)
+-- ==============================================================================
+-- NOTE: Create the admin user via Supabase Dashboard -> Authentication -> Users
+-- Then run the following to set the role in the profiles table:
+--
+-- UPDATE public.profiles
+-- SET role = 'admin', is_approved = true
+-- WHERE email = 'admin@setumoolya.com';
+-- ==============================================================================

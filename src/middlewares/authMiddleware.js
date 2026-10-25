@@ -1,16 +1,20 @@
 const { supabase, supabaseAdmin, isConfigured } = require("../config/supabase");
-const { UserModel } = require("../models/userModel");
+const { UserModel, ROLES } = require("../models/userModel");
+
+// ================================================================
+// Middleware: Authenticate via Supabase JWT
+// ================================================================
 
 /**
- * Authentication Middleware
- * Validates Supabase JWT from the Authorization header and attaches the user profile to req.user.
+ * Validates the Supabase JWT Bearer token from the Authorization header.
+ * Attaches the authenticated user's profile to req.user.
  */
 const authenticate = async (req, res, next) => {
     try {
         if (!isConfigured) {
             return res.status(503).json({
                 success: false,
-                message: "Authentication service unavailable. Please configure Supabase credentials in backend .env file."
+                message: "Authentication service unavailable. Please configure Supabase credentials."
             });
         }
 
@@ -26,7 +30,6 @@ const authenticate = async (req, res, next) => {
 
         // Verify token with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.getUser(token);
-
         if (authError || !authData.user) {
             return res.status(401).json({
                 success: false,
@@ -35,30 +38,26 @@ const authenticate = async (req, res, next) => {
             });
         }
 
-        // Fetch detailed profile from public.profiles
+        // Fetch the user profile from public.profiles
         let profile = await UserModel.findById(authData.user.id);
-
-        // Fallback in case profile record was delayed
         if (!profile) {
+            // Provide a minimal fallback so downstream guards can still check role
             profile = {
                 id: authData.user.id,
                 email: authData.user.email,
-                role: authData.user.user_metadata?.role || "farmer",
+                role: authData.user.user_metadata?.role || ROLES.FARMER,
                 full_name: authData.user.user_metadata?.full_name || authData.user.email.split("@")[0],
-                is_verified: false,
-                kyc_status: "pending"
+                is_approved: false
             };
         }
 
-        // Attach user and role to request object
         req.user = {
             id: authData.user.id,
             email: authData.user.email,
             role: profile.role,
-            is_verified: profile.is_verified,
-            kyc_status: profile.kyc_status,
-            profile: profile,
-            token: token
+            is_approved: profile.is_approved,
+            profile,
+            token
         };
 
         next();
@@ -72,28 +71,29 @@ const authenticate = async (req, res, next) => {
     }
 };
 
+// ================================================================
+// Middleware: Role-Based Access Control (RBAC)
+// ================================================================
+
 /**
- * Role-Based Access Control (RBAC) Middleware Factory
- * Usage: authorize("admin"), authorize("farmer", "fpo"), or authorize(["buyer", "admin"])
+ * Factory that creates a role guard middleware.
+ * Usage: authorize("admin"), authorize("farmer", "buyer")
  */
 const authorize = (...roles) => {
-    const flatRoles = roles.flat();
-
+    const allowed = roles.flat();
     return (req, res, next) => {
         if (!req.user) {
             return res.status(401).json({
                 success: false,
-                message: "Authentication required prior to authorization check."
+                message: "Authentication required before authorization check."
             });
         }
 
-        const userRole = req.user.role;
-
-        if (!flatRoles.includes(userRole)) {
+        if (!allowed.includes(req.user.role)) {
             return res.status(403).json({
                 success: false,
-                message: `Access denied. Role '${userRole}' is not permitted to perform this action.`,
-                allowedRoles: flatRoles
+                message: `Access denied. Role '${req.user.role}' is not permitted for this action.`,
+                allowedRoles: allowed
             });
         }
 
@@ -101,54 +101,27 @@ const authorize = (...roles) => {
     };
 };
 
+// ================================================================
+// Middleware: Require Approved Account
+// ================================================================
+
 /**
- * Verification Guard Middleware
- * Ensures the actor has completed KYC and is verified by an Admin/FPO
+ * Ensures the authenticated user has been approved by an Admin.
+ * Farmers and Buyers must be approved before accessing protected resources.
  */
-const requireVerified = (req, res, next) => {
+const requireApproved = (req, res, next) => {
     if (!req.user) {
-        return res.status(401).json({
-            success: false,
-            message: "Authentication required."
-        });
+        return res.status(401).json({ success: false, message: "Authentication required." });
     }
 
-    if (!req.user.is_verified) {
+    // Admins are always considered approved
+    if (req.user.role === ROLES.ADMIN) return next();
+
+    if (!req.user.is_approved) {
         return res.status(403).json({
             success: false,
-            message: "Account verification required. Your KYC verification is currently pending or rejected.",
-            kyc_status: req.user.kyc_status
+            message: "Your account is pending Admin approval. Please wait for approval notification via email."
         });
-    }
-
-    next();
-};
-
-/**
- * Optional Authentication Middleware
- * If token is present, populates req.user. If not, proceeds without error.
- */
-const optionalAuth = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ") || !isConfigured) {
-        return next();
-    }
-
-    try {
-        const token = authHeader.split(" ")[1];
-        const { data: authData } = await supabase.auth.getUser(token);
-        if (authData?.user) {
-            const profile = await UserModel.findById(authData.user.id);
-            req.user = {
-                id: authData.user.id,
-                email: authData.user.email,
-                role: profile?.role || authData.user.user_metadata?.role || "farmer",
-                is_verified: profile?.is_verified || false,
-                profile: profile
-            };
-        }
-    } catch {
-        // Silently proceed as guest
     }
 
     next();
@@ -157,6 +130,5 @@ const optionalAuth = async (req, res, next) => {
 module.exports = {
     authenticate,
     authorize,
-    requireVerified,
-    optionalAuth
+    requireApproved
 };

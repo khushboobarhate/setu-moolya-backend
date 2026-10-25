@@ -9,9 +9,9 @@ let supabase = null;
 let supabaseAdmin = null;
 
 const isConfigured = Boolean(
-    supabaseUrl && 
-    supabaseAnonKey && 
-    !supabaseUrl.includes("your-project-ref") && 
+    supabaseUrl &&
+    supabaseAnonKey &&
+    !supabaseUrl.includes("your-project-ref") &&
     !supabaseAnonKey.includes("your_supabase_anon_key")
 );
 
@@ -43,7 +43,7 @@ if (isConfigured) {
     }
 } else {
     console.warn("⚠️  [NOTICE] Supabase credentials not yet detected in .env file.");
-    console.warn("👉  Please configure SUPABASE_URL and SUPABASE_ANON_KEY in your .env file to enable live database and auth interactions.");
+    console.warn("👉  Please configure SUPABASE_URL and SUPABASE_ANON_KEY in your .env file.");
 }
 
 module.exports = {
