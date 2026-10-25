@@ -9,7 +9,7 @@ const otpController = require("../controllers/otpController");
 
 /**
  * @route   POST /api/otp/send
- * @desc    Send a 6-digit OTP to the provided mobile number
+ * @desc    Send via Twilio/dev; MSG91 sends OTP through its browser widget
  * @access  Public
  * @body    { phone: "+919876543210" }
  */
@@ -17,9 +17,9 @@ router.post("/send", otpController.sendOtp);
 
 /**
  * @route   POST /api/otp/verify
- * @desc    Verify the OTP and receive a phone_verified_token for registration
+ * @desc    Verify OTP or MSG91 widget access token for registration
  * @access  Public
- * @body    { phone: "+919876543210", otp: "123456" }
+ * @body    { phone: "+919876543210", otp: "123456" } or { phone, access_token }
  */
 router.post("/verify", otpController.verifyOtp);
 

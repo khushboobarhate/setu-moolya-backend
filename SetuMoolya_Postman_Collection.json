@@ -120,15 +120,17 @@
 							"script": {
 								"exec": [
 									"var res = pm.response.json();",
+									"var requestBody = JSON.parse(pm.request.body.raw);",
+									"pm.collectionVariables.set('otp_phone', requestBody.phone);",
 									"if (res.success && res.otp) {",
-									"    // DEV MODE: OTP is returned in response for testing",
+									"    // DEV provider only: MSG91 sends its OTP by SMS.",
 									"    pm.collectionVariables.set('otp_code', res.otp);",
-									"    pm.collectionVariables.set('otp_phone', pm.request.body.raw ? JSON.parse(pm.request.body.raw).phone : '');",
-									"    console.log('OTP captured:', res.otp);",
+									"    console.log('Development OTP captured.');",
 									"}",
-									"pm.test('OTP sent successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    pm.expect(res.success).to.be.true;",
+									"pm.test('OTP request is handled', function () {",
+									"    pm.expect([200, 409]).to.include(pm.response.code);",
+									"    if (pm.response.code === 200) pm.expect(res.success).to.be.true;",
+									"    if (pm.response.code === 409) pm.expect(res.message).to.include('MSG91 browser widget');",
 									"});"
 								],
 								"type": "text/javascript"
@@ -152,7 +154,7 @@
 							"host": ["{{BASE_URL}}"],
 							"path": ["api", "otp", "send"]
 						},
-						"description": "Send a 6-digit OTP to the mobile number.\n\n**DEV MODE:** The OTP is also returned in the response body as `otp` field (only in development). Copy it for the next step.\n\nChange the phone number to yours."
+						"description": "Send an OTP using Twilio or the development provider. With `SMS_PROVIDER=msg91`, send the OTP from the MSG91 browser widget instead; this endpoint intentionally returns 409 in widget mode. After the widget verifies the code, submit its `data[\"access-token\"]` and the same phone to the Verify request. For local dev, use the `otp` returned by this request."
 					},
 					"response": []
 				},
@@ -188,14 +190,14 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"phone\": \"+919876543210\",\n  \"otp\": \"123456\"\n}"
+							"raw": "{\n  \"phone\": \"+919876543210\",\n  \"access_token\": \"<MSG91 widget data[access-token]>\"\n}"
 						},
 						"url": {
 							"raw": "{{BASE_URL}}/api/otp/verify",
 							"host": ["{{BASE_URL}}"],
 							"path": ["api", "otp", "verify"]
 						},
-						"description": "Verify the OTP received on the mobile number.\n\nReplace `otp` with the code from the Send OTP response.\n\nOn success, you get a `phone_verified_token` — this is automatically saved to the collection variable for use in registration."
+						"description": "With `SMS_PROVIDER=msg91`, submit the same phone used in the widget and the JWT from `data[\"access-token\"]`; the backend validates it with MSG91 before issuing `phone_verified_token`. With Twilio/dev, replace `access_token` with the numeric `otp` field. The verified registration token is saved for the registration request."
 					},
 					"response": []
 				},
@@ -211,7 +213,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"phone\": \"+919876543210\",\n  \"otp\": \"000000\"\n}"
+							"raw": "{\n  \"phone\": \"+919876543210\",\n  \"access_token\": \"invalid-widget-token\"\n}"
 						},
 						"url": {
 							"raw": "{{BASE_URL}}/api/otp/verify",
