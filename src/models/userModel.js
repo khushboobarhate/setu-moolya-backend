@@ -247,6 +247,26 @@ class UserModel {
         if (error) throw error;
         return { users: data, total: count, page, totalPages: Math.ceil(count / limit) };
     }
+
+    // ----------------------------------------------------------------
+    // CALL AVAILABILITY
+    // ----------------------------------------------------------------
+
+    /**
+     * Get user call availability (defaults to true / ON)
+     */
+    static async getCallAvailability(userId) {
+        const { CallModel } = require("./callModel");
+        return CallModel.getUserAvailability(userId);
+    }
+
+    /**
+     * Set user call availability (true/false)
+     */
+    static async setCallAvailability(userId, isAvailable) {
+        const { CallModel } = require("./callModel");
+        return CallModel.setUserAvailability(userId, isAvailable);
+    }
 }
 
 module.exports = { UserModel, ROLES, REG_STATUS };

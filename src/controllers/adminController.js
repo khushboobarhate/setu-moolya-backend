@@ -1,6 +1,8 @@
 const { supabase, supabaseAdmin, isConfigured } = require("../config/supabase");
 const { UserModel, ROLES, REG_STATUS } = require("../models/userModel");
 const { sendEmail, buildApprovalEmail, buildRejectionEmail } = require("../config/email");
+const { CallModel } = require("../models/callModel");
+const { CropModel } = require("../models/cropModel");
 require("dotenv").config();
 
 // ================================================================
@@ -179,6 +181,9 @@ const approveRequest = async (req, res) => {
             updated_at: new Date().toISOString()
         });
 
+        // Initialize default call availability to true (ON)
+        await CallModel.setUserAvailability(createdUser.id, true);
+
         // Update the registration request status to approved
         await UserModel.updateRegistrationStatus(requestId, REG_STATUS.APPROVED, {
             approved_login_email: loginEmail,
@@ -196,7 +201,7 @@ const approveRequest = async (req, res) => {
         });
 
         const emailResult = await sendEmail({
-            to: regRequest.email || regRequest.mobile_number, // Use email if provided, else fallback
+            to: regRequest.email || regRequest.mobile_number,
             subject: emailContent.subject,
             html: emailContent.html
         });
@@ -322,12 +327,41 @@ const listApprovedUsers = async (req, res) => {
 };
 
 // ================================================================
-// Utility: Generate Login Credentials
+// Controller: Admin – List All Platform Crops & Call Logs
 // ================================================================
 
 /**
- * Generate a unique login email based on user's name and role
+ * @route   GET /api/admin/crops
+ * @desc    List all crop listings on the platform
+ * @access  Protected (Admin)
  */
+const listAllCrops = async (req, res) => {
+    try {
+        const crops = await CropModel.findAllAvailable();
+        return res.status(200).json({ success: true, count: crops.length, data: crops });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: "Failed to list crops.", error: error.message });
+    }
+};
+
+/**
+ * @route   GET /api/admin/call-logs
+ * @desc    List platform call logs
+ * @access  Protected (Admin)
+ */
+const listAllCallLogs = async (req, res) => {
+    try {
+        const calls = await CallModel.listUserCalls("");
+        return res.status(200).json({ success: true, count: calls.length, data: calls });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: "Failed to list call logs.", error: error.message });
+    }
+};
+
+// ================================================================
+// Utility: Generate Login Credentials
+// ================================================================
+
 const generateLoginEmail = (fullName, role) => {
     const namePart = fullName
         .toLowerCase()
@@ -338,9 +372,6 @@ const generateLoginEmail = (fullName, role) => {
     return `${namePart}${timestamp}@${domain}`;
 };
 
-/**
- * Generate a secure random password (10 characters: letters + digits + special char)
- */
 const generateSecurePassword = () => {
     const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
     const special = "!@#$%";
@@ -350,7 +381,6 @@ const generateSecurePassword = () => {
     }
     password += special.charAt(Math.floor(Math.random() * special.length));
     password += Math.floor(Math.random() * 10).toString();
-    // Shuffle
     return password.split("").sort(() => 0.5 - Math.random()).join("");
 };
 
@@ -360,5 +390,7 @@ module.exports = {
     approveRequest,
     rejectRequest,
     getRequestDetail,
-    listApprovedUsers
+    listApprovedUsers,
+    listAllCrops,
+    listAllCallLogs
 };

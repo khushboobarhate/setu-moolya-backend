@@ -30,7 +30,7 @@ app.use(cors({
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Static file serving – passport photographs
+// Static file serving – passport photographs & crop listings
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ================================================================
@@ -40,11 +40,18 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.get("/", (req, res) => {
     res.json({
         name: "SetuMoolya (सेतुमूल्य) API",
-        tagline: "Every Root Deserves Its Worth – AgriTech Value Chain Platform",
+        tagline: "Every Root Deserves Its Worth – Agricultural E-Commerce Platform",
         status: "online",
-        version: "2.0.0",
+        version: "3.0.0",
         database: isConfigured ? "Supabase Connected" : "Supabase Pending Configuration in .env",
         modules: ["Admin", "Farmer", "Buyer"],
+        features: [
+            "Farmer Crop Upload & Management",
+            "Buyer Crop Catalog & Filter (Organic / Inorganic)",
+            "Buyer Interest & 1-5 Star Rating System",
+            "Independent Farmer & Buyer Call Availability (ON/OFF)",
+            "Availability-Gated Farmer-Buyer Direct Calling"
+        ],
         docs: "/api/endpoints"
     });
 });
@@ -64,7 +71,7 @@ app.get("/health", (req, res) => {
 app.get("/api/endpoints", (req, res) => {
     res.json({
         status: "active",
-        version: "2.0.0",
+        version: "3.0.0",
         modules: {
             otp: {
                 sendOtp: "POST /api/otp/send",
@@ -76,17 +83,34 @@ app.get("/api/endpoints", (req, res) => {
                 getRequest: "GET /api/admin/requests/:requestId (Protected – Admin)",
                 approveRequest: "POST /api/admin/requests/:requestId/approve (Protected – Admin)",
                 rejectRequest: "POST /api/admin/requests/:requestId/reject (Protected – Admin)",
-                listUsers: "GET /api/admin/users (Protected – Admin)"
+                listUsers: "GET /api/admin/users (Protected – Admin)",
+                listCrops: "GET /api/admin/crops (Protected – Admin)",
+                listCallLogs: "GET /api/admin/call-logs (Protected – Admin)"
             },
             farmer: {
                 register: "POST /api/farmer/register (multipart/form-data)",
                 login: "POST /api/farmer/login",
-                profile: "GET /api/farmer/profile (Protected – Farmer)"
+                profile: "GET /api/farmer/profile (Protected – Farmer)",
+                getAvailability: "GET /api/farmer/availability (Protected – Farmer)",
+                setAvailability: "PATCH /api/farmer/availability (Protected – Farmer)",
+                uploadCrop: "POST /api/farmer/crops (multipart/form-data – Protected – Farmer)",
+                listMyCrops: "GET /api/farmer/crops (Protected – Farmer)",
+                getCropDetail: "GET /api/farmer/crops/:cropId (Protected – Farmer)",
+                deleteCrop: "DELETE /api/farmer/crops/:cropId (Protected – Farmer)",
+                listInterests: "GET /api/farmer/interests (Protected – Farmer)",
+                callBuyer: "POST /api/farmer/calls/initiate (Protected – Farmer)"
             },
             buyer: {
                 register: "POST /api/buyer/register (multipart/form-data)",
                 login: "POST /api/buyer/login",
-                profile: "GET /api/buyer/profile (Protected – Buyer)"
+                profile: "GET /api/buyer/profile (Protected – Buyer)",
+                getAvailability: "GET /api/buyer/availability (Protected – Buyer)",
+                setAvailability: "PATCH /api/buyer/availability (Protected – Buyer)",
+                browseCrops: "GET /api/buyer/crops (Protected – Buyer)",
+                getCropDetail: "GET /api/buyer/crops/:cropId (Protected – Buyer)",
+                rateInterest: "POST /api/buyer/crops/:cropId/interest (Protected – Buyer)",
+                listMyInterests: "GET /api/buyer/interests (Protected – Buyer)",
+                callFarmer: "POST /api/buyer/calls/initiate (Protected – Buyer)"
             }
         }
     });
@@ -124,10 +148,10 @@ app.use((err, req, res, next) => {
     if (err.code === "LIMIT_FILE_SIZE") {
         return res.status(400).json({
             success: false,
-            message: "Uploaded file is too large. Maximum allowed size is 5 MB."
+            message: "Uploaded file is too large. Maximum allowed size exceeded."
         });
     }
-    if (err.message && err.message.includes("Only JPEG")) {
+    if (err.message && (err.message.includes("Only JPEG") || err.message.includes("images are allowed"))) {
         return res.status(400).json({
             success: false,
             message: err.message
@@ -144,19 +168,21 @@ app.use((err, req, res, next) => {
 // Start Server
 // ================================================================
 
-app.listen(PORT, () => {
-    console.log("=================================================");
-    console.log(`🌿 SetuMoolya Backend Server Running on Port ${PORT}`);
-    console.log(`📡 URL: http://localhost:${PORT}`);
-    console.log(`📋 Modules: Admin | Farmer | Buyer`);
-    console.log(`🔐 OTP Verification: Active`);
-    console.log(`📸 Photo Uploads: /uploads/photos/`);
-    if (!isConfigured) {
-        console.log(`⚠️  ACTION NEEDED: Update .env with your Supabase credentials!`);
-    } else {
-        console.log(`✅ Supabase Database: Connected`);
-    }
-    console.log("=================================================");
-});
+if (process.env.NODE_ENV !== "test") {
+    app.listen(PORT, () => {
+        console.log("=================================================");
+        console.log(`🌿 SetuMoolya Backend Server Running on Port ${PORT}`);
+        console.log(`📡 URL: http://localhost:${PORT}`);
+        console.log(`📋 Modules: Admin | Farmer | Buyer`);
+        console.log(`🌾 Agri E-Commerce: Crops | Ratings | Calling Active`);
+        console.log(`📸 Photo Uploads: /uploads/photos/ & /uploads/crops/`);
+        if (!isConfigured) {
+            console.log(`⚠️  ACTION NEEDED: Update .env with your Supabase credentials!`);
+        } else {
+            console.log(`✅ Supabase Database: Connected`);
+        }
+        console.log("=================================================");
+    });
+}
 
 module.exports = app;

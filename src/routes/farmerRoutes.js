@@ -2,8 +2,11 @@ const express = require("express");
 const router = express.Router();
 const farmerController = require("../controllers/farmerController");
 const { authenticate, authorize, requireApproved } = require("../middlewares/authMiddleware");
-const { upload } = require("../config/multer");
+const { upload, uploadCrop } = require("../config/multer");
 const { ROLES } = require("../models/userModel");
+
+// Common guard for farmer protected routes
+const farmerAuth = [authenticate, authorize(ROLES.FARMER), requireApproved];
 
 // ================================================================
 // PUBLIC ROUTES
@@ -13,13 +16,6 @@ const { ROLES } = require("../models/userModel");
  * @route   POST /api/farmer/register
  * @desc    Submit a new farmer registration request (after OTP verification)
  * @access  Public
- * @body    FormData – all fields + photo file
- *
- * Required fields:
- *   full_name, age, mobile_number, nationality, state, taluka, city,
- *   full_address, land_location, preferred_language, phone_verified_token
- * Required file:
- *   photo (passport-size photograph, max 5MB, JPEG/PNG/WEBP)
  */
 router.post(
     "/register",
@@ -31,7 +27,6 @@ router.post(
  * @route   POST /api/farmer/login
  * @desc    Existing approved farmer login using credentials from approval email
  * @access  Public
- * @body    { login_id: "email@example.com", password: "..." }
  */
 router.post("/login", farmerController.farmerLogin);
 
@@ -41,15 +36,97 @@ router.post("/login", farmerController.farmerLogin);
 
 /**
  * @route   GET /api/farmer/profile
- * @desc    Get authenticated farmer's own profile
+ * @desc    Get authenticated farmer's own profile (including call availability)
  * @access  Protected (Farmer, Approved)
  */
-router.get(
-    "/profile",
-    authenticate,
-    authorize(ROLES.FARMER),
-    requireApproved,
-    farmerController.getFarmerProfile
+router.get("/profile", farmerAuth, farmerController.getFarmerProfile);
+
+// ----------------------------------------------------------------
+// CALL AVAILABILITY
+// ----------------------------------------------------------------
+
+/**
+ * @route   GET /api/farmer/availability
+ * @desc    Get farmer's current call availability status
+ * @access  Protected (Farmer, Approved)
+ */
+router.get("/availability", farmerAuth, farmerController.getCallAvailability);
+
+/**
+ * @route   PATCH /api/farmer/availability
+ * @desc    Update farmer's call availability ON or OFF
+ * @access  Protected (Farmer, Approved)
+ * @body    { is_call_available: true/false } or { status: "ON"/"OFF" }
+ */
+router.patch("/availability", farmerAuth, farmerController.setCallAvailability);
+router.put("/availability", farmerAuth, farmerController.setCallAvailability);
+
+// ----------------------------------------------------------------
+// CROP LISTINGS MANAGEMENT
+// ----------------------------------------------------------------
+
+/**
+ * @route   POST /api/farmer/crops
+ * @desc    Upload a new crop listing with photos, quantity, organic/inorganic type, price, description
+ * @access  Protected (Farmer, Approved)
+ * @body    FormData: crop_name, crop_type, quantity, quantity_unit, price, description
+ * @files   photos (multiple) or photo (single)
+ */
+router.post(
+    "/crops",
+    farmerAuth,
+    uploadCrop.fields([
+        { name: "photos", maxCount: 10 },
+        { name: "photo", maxCount: 1 }
+    ]),
+    farmerController.uploadCrop
 );
+
+/**
+ * @route   GET /api/farmer/crops
+ * @desc    List all crops uploaded by authenticated farmer with interest & rating metrics
+ * @access  Protected (Farmer, Approved)
+ */
+router.get("/crops", farmerAuth, farmerController.getMyCrops);
+
+/**
+ * @route   GET /api/farmer/crops/:cropId
+ * @desc    Get single crop details with all interested buyers and ratings
+ * @access  Protected (Farmer, Approved)
+ */
+router.get("/crops/:cropId", farmerAuth, farmerController.getCropDetail);
+
+/**
+ * @route   DELETE /api/farmer/crops/:cropId
+ * @desc    Delete/remove crop listing
+ * @access  Protected (Farmer, Approved)
+ */
+router.delete("/crops/:cropId", farmerAuth, farmerController.deleteCrop);
+
+// ----------------------------------------------------------------
+// BUYER INTERESTS & RATINGS VISIBILITY
+// ----------------------------------------------------------------
+
+/**
+ * @route   GET /api/farmer/interests
+ * @desc    View all buyers interested in this farmer's crops with interest ratings
+ * @access  Protected (Farmer, Approved)
+ * @query   cropId (optional)
+ */
+router.get("/interests", farmerAuth, farmerController.getFarmerInterests);
+
+// ----------------------------------------------------------------
+// FARMER-TO-BUYER CALLING
+// ----------------------------------------------------------------
+
+/**
+ * @route   POST /api/farmer/calls/initiate
+ * @desc    Farmer calls an interested buyer.
+ *          Permitted only if the buyer has expressed interest AND buyer's availability is ON.
+ * @access  Protected (Farmer, Approved)
+ * @body    { buyer_id: UUID, crop_id?: UUID }
+ */
+router.post("/calls/initiate", farmerAuth, farmerController.callBuyer);
+router.post("/calls", farmerAuth, farmerController.callBuyer);
 
 module.exports = router;

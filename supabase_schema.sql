@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     preferred_language      TEXT DEFAULT 'en',
     photo_url               TEXT,                            -- Path to passport-size photo
     is_approved             BOOLEAN NOT NULL DEFAULT false,
+    is_call_available       BOOLEAN NOT NULL DEFAULT true,
     registration_request_id UUID,                            -- FK to registration_requests
     created_at              TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
@@ -276,3 +277,91 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- SET role = 'admin', is_approved = true
 -- WHERE email = 'admin@setumoolya.com';
 -- ==============================================================================
+
+-- ==============================================================================
+-- 11. CROPS TABLE (Agricultural E-Commerce)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.crops (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    farmer_id       UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    crop_name       TEXT NOT NULL,
+    crop_type       TEXT NOT NULL CHECK (crop_type IN ('organic', 'inorganic', 'non-organic')),
+    quantity        NUMERIC NOT NULL CHECK (quantity > 0),
+    quantity_unit   TEXT NOT NULL DEFAULT 'kg',
+    price           NUMERIC NOT NULL CHECK (price >= 0),
+    description     TEXT,
+    photos          TEXT[] NOT NULL DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'sold', 'archived')),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_crops_farmer_id  ON public.crops(farmer_id);
+CREATE INDEX IF NOT EXISTS idx_crops_crop_type  ON public.crops(crop_type);
+CREATE INDEX IF NOT EXISTS idx_crops_status     ON public.crops(status);
+
+DROP TRIGGER IF EXISTS trg_crops_updated_at ON public.crops;
+CREATE TRIGGER trg_crops_updated_at
+    BEFORE UPDATE ON public.crops
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- ==============================================================================
+-- 12. CROP INTERESTS TABLE (Buyer Rating & Interest System)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.crop_interests (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    crop_id     UUID NOT NULL REFERENCES public.crops(id) ON DELETE CASCADE,
+    buyer_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    rating      INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    notes       TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+    CONSTRAINT uq_crop_buyer_interest UNIQUE (crop_id, buyer_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_crop_interests_crop_id  ON public.crop_interests(crop_id);
+CREATE INDEX IF NOT EXISTS idx_crop_interests_buyer_id ON public.crop_interests(buyer_id);
+
+DROP TRIGGER IF EXISTS trg_crop_interests_updated_at ON public.crop_interests;
+CREATE TRIGGER trg_crop_interests_updated_at
+    BEFORE UPDATE ON public.crop_interests
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- ==============================================================================
+-- 13. CALL LOGS TABLE (Calling Functionality & Availability Tracking)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.call_logs (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    caller_id       UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    receiver_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    crop_id         UUID REFERENCES public.crops(id) ON DELETE SET NULL,
+    caller_role     user_role NOT NULL,
+    receiver_role   user_role NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('permitted', 'blocked_receiver_unavailable', 'blocked_no_interest', 'failed')),
+    phone_revealed  TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_call_logs_caller   ON public.call_logs(caller_id);
+CREATE INDEX IF NOT EXISTS idx_call_logs_receiver ON public.call_logs(receiver_id);
+
+-- RLS
+ALTER TABLE public.crops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crop_interests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.call_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role manages crops" ON public.crops FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated users view available crops" ON public.crops FOR SELECT TO authenticated USING (status = 'available' OR farmer_id = auth.uid());
+CREATE POLICY "Farmers manage their own crops" ON public.crops FOR ALL TO authenticated USING (farmer_id = auth.uid()) WITH CHECK (farmer_id = auth.uid());
+
+CREATE POLICY "Service role manages crop_interests" ON public.crop_interests FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Buyers manage their own interests" ON public.crop_interests FOR ALL TO authenticated USING (buyer_id = auth.uid()) WITH CHECK (buyer_id = auth.uid());
+CREATE POLICY "Farmers view interests on their crops" ON public.crop_interests FOR SELECT TO authenticated
+    USING (EXISTS (SELECT 1 FROM public.crops WHERE crops.id = crop_interests.crop_id AND crops.farmer_id = auth.uid()));
+
+CREATE POLICY "Service role manages call_logs" ON public.call_logs FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Users view their own call logs" ON public.call_logs FOR SELECT TO authenticated
+    USING (caller_id = auth.uid() OR receiver_id = auth.uid());

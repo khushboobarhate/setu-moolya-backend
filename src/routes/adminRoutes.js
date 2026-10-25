@@ -84,4 +84,28 @@ router.get(
     adminController.listApprovedUsers
 );
 
+/**
+ * @route   GET /api/admin/crops
+ * @desc    List all crops on the platform
+ * @access  Protected (Admin)
+ */
+router.get(
+    "/crops",
+    authenticate,
+    authorize(ROLES.ADMIN),
+    adminController.listAllCrops
+);
+
+/**
+ * @route   GET /api/admin/call-logs
+ * @desc    List call history logs across the platform
+ * @access  Protected (Admin)
+ */
+router.get(
+    "/call-logs",
+    authenticate,
+    authorize(ROLES.ADMIN),
+    adminController.listAllCallLogs
+);
+
 module.exports = router;
