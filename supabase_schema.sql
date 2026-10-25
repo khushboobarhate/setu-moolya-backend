@@ -148,12 +148,6 @@ BEGIN
         full_name,
         role,
         mobile_number,
-        nationality,
-        state,
-        taluka,
-        city,
-        full_address,
-        land_location,
         preferred_language,
         photo_url,
         is_approved,
@@ -166,10 +160,9 @@ BEGIN
         COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
         assigned_role,
         COALESCE(NEW.raw_user_meta_data->>'phone', NULL),
-        NULL, NULL, NULL, NULL, NULL, NULL,
         COALESCE(NEW.raw_user_meta_data->>'preferred_language', 'en'),
         NULL,
-        assigned_role = 'admin',   -- Admin is auto-approved; others need approval
+        (assigned_role = 'admin'),  -- Admin is auto-approved; Farmer/Buyer need approval
         timezone('utc', now()),
         timezone('utc', now())
     )
