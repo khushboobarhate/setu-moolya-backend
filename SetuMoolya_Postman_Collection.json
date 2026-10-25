@@ -1,0 +1,1011 @@
+{
+	"info": {
+		"_postman_id": "setumoolya-v2-collection",
+		"name": "SetuMoolya API v2.0 — Admin | Farmer | Buyer",
+		"description": "Complete API test collection for SetuMoolya backend.\n\n**Flow:**\n1. OTP → Send & Verify (get phone_verified_token)\n2. Farmer/Buyer → Register (with photo)\n3. Admin → Login → Dashboard → Approve/Reject\n4. Farmer/Buyer → Login with approved credentials\n5. Farmer/Buyer → View Profile\n\n**Base URL:** http://localhost:5000",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "BASE_URL",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "admin_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "farmer_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "buyer_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "phone_verified_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "farmer_request_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "buyer_request_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "farmer_login_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "farmer_password",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "buyer_login_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "buyer_password",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "🟢 Health Check",
+			"item": [
+				{
+					"name": "Server Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/health",
+							"host": ["{{BASE_URL}}"],
+							"path": ["health"]
+						},
+						"description": "Check if the server is running and Supabase is connected."
+					},
+					"response": []
+				},
+				{
+					"name": "API Info & Endpoints",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/endpoints",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "endpoints"]
+						},
+						"description": "Returns a map of all available API endpoints."
+					},
+					"response": []
+				},
+				{
+					"name": "Root Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/",
+							"host": ["{{BASE_URL}}"],
+							"path": [""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "📱 OTP — Mobile Verification",
+			"item": [
+				{
+					"name": "1. Send OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.otp) {",
+									"    // DEV MODE: OTP is returned in response for testing",
+									"    pm.collectionVariables.set('otp_code', res.otp);",
+									"    pm.collectionVariables.set('otp_phone', pm.request.body.raw ? JSON.parse(pm.request.body.raw).phone : '');",
+									"    console.log('OTP captured:', res.otp);",
+									"}",
+									"pm.test('OTP sent successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"    pm.expect(res.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phone\": \"+919876543210\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/otp/send",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "otp", "send"]
+						},
+						"description": "Send a 6-digit OTP to the mobile number.\n\n**DEV MODE:** The OTP is also returned in the response body as `otp` field (only in development). Copy it for the next step.\n\nChange the phone number to yours."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Verify OTP (Get phone_verified_token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.phone_verified_token) {",
+									"    pm.collectionVariables.set('phone_verified_token', res.phone_verified_token);",
+									"    console.log('phone_verified_token saved:', res.phone_verified_token);",
+									"}",
+									"pm.test('OTP verified and token received', function () {",
+									"    pm.response.to.have.status(200);",
+									"    pm.expect(res.success).to.be.true;",
+									"    pm.expect(res.phone_verified_token).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phone\": \"+919876543210\",\n  \"otp\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/otp/verify",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "otp", "verify"]
+						},
+						"description": "Verify the OTP received on the mobile number.\n\nReplace `otp` with the code from the Send OTP response.\n\nOn success, you get a `phone_verified_token` — this is automatically saved to the collection variable for use in registration."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Verify OTP — Wrong OTP (Error Case)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phone\": \"+919876543210\",\n  \"otp\": \"000000\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/otp/verify",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "otp", "verify"]
+						},
+						"description": "Expected: 400 Bad Request — Invalid OTP."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🌾 Farmer Module",
+			"item": [
+				{
+					"name": "1. Farmer Register (with Photo)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.data && res.data.request_id) {",
+									"    pm.collectionVariables.set('farmer_request_id', res.data.request_id);",
+									"    console.log('Farmer request_id saved:', res.data.request_id);",
+									"}",
+									"pm.test('Farmer registration submitted', function () {",
+									"    pm.response.to.have.status(201);",
+									"    pm.expect(res.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "full_name",
+									"value": "Ramesh Kumar Patil",
+									"type": "text"
+								},
+								{
+									"key": "age",
+									"value": "38",
+									"type": "text"
+								},
+								{
+									"key": "mobile_number",
+									"value": "+919876543210",
+									"type": "text",
+									"description": "Must match the phone used in OTP verification"
+								},
+								{
+									"key": "nationality",
+									"value": "Indian",
+									"type": "text"
+								},
+								{
+									"key": "state",
+									"value": "Maharashtra",
+									"type": "text"
+								},
+								{
+									"key": "taluka",
+									"value": "Nashik",
+									"type": "text"
+								},
+								{
+									"key": "city",
+									"value": "Nashik",
+									"type": "text"
+								},
+								{
+									"key": "full_address",
+									"value": "Village Pimpalgaon, Taluka Nashik, Maharashtra - 422003",
+									"type": "text"
+								},
+								{
+									"key": "land_location",
+									"value": "Survey No. 45, Pimpalgaon, Nashik",
+									"type": "text"
+								},
+								{
+									"key": "preferred_language",
+									"value": "mr",
+									"type": "text",
+									"description": "Language code: en, hi, mr, gu, ta, te, kn, bn, pa, ml, or, ur, as"
+								},
+								{
+									"key": "phone_verified_token",
+									"value": "{{phone_verified_token}}",
+									"type": "text",
+									"description": "Auto-filled from OTP Verify step"
+								},
+								{
+									"key": "photo",
+									"type": "file",
+									"src": [],
+									"description": "Upload a passport-size photo (JPEG/PNG/WEBP, max 5MB)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/farmer/register",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "farmer", "register"]
+						},
+						"description": "Submit farmer registration request.\n\n**IMPORTANT:**\n- Use `multipart/form-data` (already set)\n- `mobile_number` must match the phone used in OTP step\n- `phone_verified_token` is auto-filled from the OTP Verify step\n- Upload an actual image file in the `photo` field\n- `preferred_language` accepts: en, hi, mr, gu, ta, te, kn, bn, pa, ml, or, ur, as\n\nThe response message will be in the selected language (Marathi in this example)."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Farmer Login (After Approval)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.data && res.data.token) {",
+									"    pm.collectionVariables.set('farmer_token', res.data.token);",
+									"    console.log('Farmer token saved');",
+									"}",
+									"pm.test('Farmer login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"    pm.expect(res.success).to.be.true;",
+									"    pm.expect(res.data.token).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"login_id\": \"{{farmer_login_id}}\",\n  \"password\": \"{{farmer_password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/farmer/login",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "farmer", "login"]
+						},
+						"description": "Login using the credentials sent in the approval email.\n\nReplace `farmer_login_id` and `farmer_password` with the actual credentials from the approval email (or set them as collection variables)."
+					},
+					"response": []
+				},
+				{
+					"name": "3. Farmer Profile (Protected)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{farmer_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/farmer/profile",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "farmer", "profile"]
+						},
+						"description": "Get the authenticated farmer's own profile.\n\nRequires the farmer token (auto-filled after login)."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Farmer Login — Wrong Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"login_id\": \"somefarmer@setumoolya.com\",\n  \"password\": \"wrongpassword\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/farmer/login",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "farmer", "login"]
+						},
+						"description": "Expected: 401 Unauthorized — Invalid credentials."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Farmer Profile — No Token (Unauthorized)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/farmer/profile",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "farmer", "profile"]
+						},
+						"description": "Expected: 401 Unauthorized — No Bearer token."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🛒 Buyer Module",
+			"item": [
+				{
+					"name": "1. Buyer Register (with Photo)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.data && res.data.request_id) {",
+									"    pm.collectionVariables.set('buyer_request_id', res.data.request_id);",
+									"    console.log('Buyer request_id saved:', res.data.request_id);",
+									"}",
+									"pm.test('Buyer registration submitted', function () {",
+									"    pm.response.to.have.status(201);",
+									"    pm.expect(res.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "full_name",
+									"value": "Suresh Mehta",
+									"type": "text"
+								},
+								{
+									"key": "age",
+									"value": "45",
+									"type": "text"
+								},
+								{
+									"key": "mobile_number",
+									"value": "+919876543210",
+									"type": "text",
+									"description": "Must match the phone used in OTP verification"
+								},
+								{
+									"key": "nationality",
+									"value": "Indian",
+									"type": "text"
+								},
+								{
+									"key": "state",
+									"value": "Gujarat",
+									"type": "text"
+								},
+								{
+									"key": "taluka",
+									"value": "Ahmedabad",
+									"type": "text"
+								},
+								{
+									"key": "city",
+									"value": "Ahmedabad",
+									"type": "text"
+								},
+								{
+									"key": "full_address",
+									"value": "302, Sunrise Apartments, SG Highway, Ahmedabad - 380054",
+									"type": "text"
+								},
+								{
+									"key": "preferred_language",
+									"value": "gu",
+									"type": "text",
+									"description": "Language code: en, hi, mr, gu, ta, te, kn, bn, pa, ml, or, ur, as"
+								},
+								{
+									"key": "phone_verified_token",
+									"value": "{{phone_verified_token}}",
+									"type": "text",
+									"description": "Auto-filled from OTP Verify step"
+								},
+								{
+									"key": "photo",
+									"type": "file",
+									"src": [],
+									"description": "Upload a passport-size photo (JPEG/PNG/WEBP, max 5MB)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/buyer/register",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "buyer", "register"]
+						},
+						"description": "Submit buyer registration request.\n\n**Note:** Buyer does NOT have `land_location` field — that is Farmer-only.\n\nThe response message will be in Gujarati (gu) in this example."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Buyer Login (After Approval)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.data && res.data.token) {",
+									"    pm.collectionVariables.set('buyer_token', res.data.token);",
+									"    console.log('Buyer token saved');",
+									"}",
+									"pm.test('Buyer login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"    pm.expect(res.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"login_id\": \"{{buyer_login_id}}\",\n  \"password\": \"{{buyer_password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/buyer/login",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "buyer", "login"]
+						},
+						"description": "Login using the credentials sent in the approval email."
+					},
+					"response": []
+				},
+				{
+					"name": "3. Buyer Profile (Protected)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{buyer_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/buyer/profile",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "buyer", "profile"]
+						},
+						"description": "Get the authenticated buyer's own profile."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "👨‍💼 Admin Module",
+			"item": [
+				{
+					"name": "1. Admin Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.data && res.data.token) {",
+									"    pm.collectionVariables.set('admin_token', res.data.token);",
+									"    console.log('Admin token saved:', res.data.token.substring(0, 30) + '...');",
+									"}",
+									"pm.test('Admin login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"    pm.expect(res.success).to.be.true;",
+									"    pm.expect(res.data.token).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@setumoolya.com\",\n  \"password\": \"your_admin_password\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/login",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "login"]
+						},
+						"description": "Admin direct login.\n\nReplace with your actual admin email and password (the one you created in Supabase Auth dashboard).\n\nThe token is automatically saved to `admin_token` collection variable."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Admin Dashboard (All Pending Requests)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/dashboard",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "dashboard"],
+							"query": [
+								{
+									"key": "role",
+									"value": "",
+									"description": "Optional filter: 'farmer' or 'buyer'. Leave empty for all.",
+									"disabled": true
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "50",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Fetches ALL pending Farmer and Buyer registration requests.\n\nEach request includes: full_name, age, mobile, address, photo_url, role, language, etc.\n\n**Optional query params:**\n- `role=farmer` — show only farmer requests\n- `role=buyer` — show only buyer requests\n- `page` and `limit` for pagination"
+					},
+					"response": []
+				},
+				{
+					"name": "2a. Dashboard — Farmers Only",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/dashboard?role=farmer",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "dashboard"],
+							"query": [
+								{
+									"key": "role",
+									"value": "farmer"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2b. Dashboard — Buyers Only",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/dashboard?role=buyer",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "dashboard"],
+							"query": [
+								{
+									"key": "role",
+									"value": "buyer"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Get Single Request Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/requests/{{farmer_request_id}}",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "requests", "{{farmer_request_id}}"]
+						},
+						"description": "Get the complete detail of one registration request.\n\nUses `farmer_request_id` saved from the Farmer Register step. You can replace it with any UUID from the dashboard."
+					},
+					"response": []
+				},
+				{
+					"name": "4. ✅ Approve Farmer Request",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.data) {",
+									"    pm.collectionVariables.set('farmer_login_id', res.data.login_id || '');",
+									"    console.log('Farmer login_id saved:', res.data.login_id);",
+									"    console.log('Check email for password!');",
+									"}",
+									"pm.test('Farmer approved successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"    pm.expect(res.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/requests/{{farmer_request_id}}/approve",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "requests", "{{farmer_request_id}}", "approve"]
+						},
+						"description": "Approve the farmer's registration request.\n\n**What happens on approval:**\n1. A Supabase Auth user is created\n2. A unique login email is generated (e.g. rameshkumar123456@setumoolya.com)\n3. A secure random password is generated\n4. The profile is saved in the profiles table\n5. An approval email is sent with login_id + password + login link\n6. The request status is updated to 'approved'\n\nThe generated `login_id` is saved to the collection variable for the Farmer Login step."
+					},
+					"response": []
+				},
+				{
+					"name": "4. ❌ Reject Farmer Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/requests/PASTE_REQUEST_ID_HERE/reject",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "requests", "PASTE_REQUEST_ID_HERE", "reject"]
+						},
+						"description": "Reject a registration request.\n\n**What happens on rejection:**\n1. Request status updated to 'rejected'\n2. A rejection email is sent asking user to re-check and resubmit details\n\nReplace `PASTE_REQUEST_ID_HERE` with the actual request UUID."
+					},
+					"response": []
+				},
+				{
+					"name": "5. ✅ Approve Buyer Request",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var res = pm.response.json();",
+									"if (res.success && res.data) {",
+									"    pm.collectionVariables.set('buyer_login_id', res.data.login_id || '');",
+									"    console.log('Buyer login_id saved:', res.data.login_id);",
+									"}",
+									"pm.test('Buyer approved successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"    pm.expect(res.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/requests/{{buyer_request_id}}/approve",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "requests", "{{buyer_request_id}}", "approve"]
+						},
+						"description": "Approve the buyer's registration request."
+					},
+					"response": []
+				},
+				{
+					"name": "6. List All Approved Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/users?role=farmer&page=1&limit=20",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "users"],
+							"query": [
+								{
+									"key": "role",
+									"value": "farmer",
+									"description": "farmer or buyer"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						},
+						"description": "List all approved Farmers or Buyers in the profiles table.\n\nChange `role` to `buyer` to list buyers."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Admin Login — Non-Admin User (403)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"somefarmer@setumoolya.com\",\n  \"password\": \"farmerpass123\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/login",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "login"]
+						},
+						"description": "Expected: 403 Forbidden — Not an Admin account."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Admin Dashboard — No Token (401)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/dashboard",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "dashboard"]
+						},
+						"description": "Expected: 401 Unauthorized — No Bearer token provided."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Approve Already-Approved Request (400)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/requests/{{farmer_request_id}}/approve",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "requests", "{{farmer_request_id}}", "approve"]
+						},
+						"description": "Expected: 400 Bad Request — Request already approved, cannot approve again."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🖼️ Photo Access",
+			"item": [
+				{
+					"name": "View Uploaded Photo",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/uploads/photos/photo-REPLACE_WITH_ACTUAL_FILENAME.jpg",
+							"host": ["{{BASE_URL}}"],
+							"path": ["uploads", "photos", "photo-REPLACE_WITH_ACTUAL_FILENAME.jpg"]
+						},
+						"description": "Photos are served as static files.\n\nCopy the `photo_url` from any registration response (e.g. `/uploads/photos/photo-1234567890.jpg`) and paste the filename here.\n\nOpen this URL directly in a browser to see the photo."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🔒 Authorization Edge Cases",
+			"item": [
+				{
+					"name": "Farmer accessing Buyer Profile (403)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{farmer_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/buyer/profile",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "buyer", "profile"]
+						},
+						"description": "Expected: 403 Forbidden — Farmer token cannot access Buyer profile endpoint."
+					},
+					"response": []
+				},
+				{
+					"name": "Buyer accessing Admin Dashboard (403)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{buyer_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/admin/dashboard",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "admin", "dashboard"]
+						},
+						"description": "Expected: 403 Forbidden — Only Admin can access the dashboard."
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid Endpoint (404)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/nonexistent",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "nonexistent"]
+						},
+						"description": "Expected: 404 Not Found."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
