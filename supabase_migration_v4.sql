@@ -1,5 +1,5 @@
 -- SetuMoolya v4: manual admin review and email credentials.
--- Existing installations: apply v2/v3 if needed, then run this entire file.
+-- Existing v2/v3 installations: run this entire file; missing v3 tables are included.
 -- This migration does not delete historical requests, OTP records, or accounts.
 -- Account setup after COMMIT (on the backend host; no plaintext passwords in SQL):
 --   1. Set ADMIN_EMAIL=admin-user@gmail.com and ADMIN_PASSWORD in the ignored .env.
@@ -9,6 +9,66 @@
 BEGIN;
 
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS age INTEGER;
+
+-- The connected v2 database may not have applied v3. Create its additive
+-- marketplace prerequisites here before installing the v4 permissions.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_call_available BOOLEAN NOT NULL DEFAULT true;
+CREATE TABLE IF NOT EXISTS public.crops (
+    id UUID PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
+    farmer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    crop_name TEXT NOT NULL,
+    crop_type TEXT NOT NULL CHECK (crop_type IN ('organic', 'inorganic', 'non-organic')),
+    quantity NUMERIC NOT NULL CHECK (quantity > 0),
+    quantity_unit TEXT NOT NULL DEFAULT 'kg',
+    price NUMERIC NOT NULL CHECK (price >= 0),
+    description TEXT,
+    photos TEXT[] NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'sold', 'archived')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_crops_farmer_id ON public.crops(farmer_id);
+CREATE INDEX IF NOT EXISTS idx_crops_status ON public.crops(status);
+
+CREATE TABLE IF NOT EXISTS public.crop_interests (
+    id UUID PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
+    crop_id UUID NOT NULL REFERENCES public.crops(id) ON DELETE CASCADE,
+    buyer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_crop_buyer_interest UNIQUE (crop_id, buyer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_crop_interests_buyer_id ON public.crop_interests(buyer_id);
+
+CREATE TABLE IF NOT EXISTS public.call_logs (
+    id UUID PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
+    caller_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    receiver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    crop_id UUID REFERENCES public.crops(id) ON DELETE SET NULL,
+    caller_role public.user_role NOT NULL,
+    receiver_role public.user_role NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('permitted', 'blocked_receiver_unavailable', 'blocked_no_interest', 'failed')),
+    phone_revealed TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_call_logs_caller ON public.call_logs(caller_id);
+CREATE INDEX IF NOT EXISTS idx_call_logs_receiver ON public.call_logs(receiver_id);
+
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = '' AS $$
+BEGIN NEW.updated_at = now(); RETURN NEW; END;
+$$;
+DO $$ DECLARE table_name TEXT;
+BEGIN
+    FOREACH table_name IN ARRAY ARRAY['crops', 'crop_interests'] LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS trg_updated_at ON public.%I', table_name);
+        EXECUTE format('CREATE TRIGGER trg_updated_at BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at()', table_name);
+    END LOOP;
+END $$;
+
+
 ALTER TABLE public.registration_requests
     ADD COLUMN IF NOT EXISTS review_token UUID,
     ADD COLUMN IF NOT EXISTS review_started_at TIMESTAMPTZ,
@@ -144,6 +204,17 @@ CREATE POLICY interests_read ON public.crop_interests FOR SELECT TO authenticate
 CREATE POLICY calls_read ON public.call_logs FOR SELECT TO authenticated
     USING (public.is_platform_admin() OR ((public.is_approved_member('farmer') OR public.is_approved_member('buyer'))
         AND (caller_id = auth.uid() OR receiver_id = auth.uid())));
+
+-- Older deployments exposed a legacy KYC RPC. Remove its public execute
+-- privilege so it cannot bypass the new admin-only registration review.
+DO $$ DECLARE routine RECORD;
+BEGIN
+    FOR routine IN SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = 'verify_user_kyc'
+    LOOP
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', routine.oid::regprocedure);
+    END LOOP;
+END $$;
 
 REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.claim_registration_request(UUID, UUID) FROM PUBLIC, anon, authenticated;

@@ -26,7 +26,7 @@ npm run dev
 ```
 
 - **New database:** run the complete `supabase_schema.sql` in the Supabase SQL Editor. It includes the v4 migration.
-- **Existing v2/v3 database:** run `supabase_migration_v4.sql`. For an older pre-v2 installation, first apply v2 and v3. Do not rerun old migrations after v4; they recreate the old policies and triggers.
+- **Existing v2/v3 database:** run `supabase_migration_v4.sql`; it includes any missing v3 marketplace tables and call-availability column. For an older pre-v2 installation, first apply v2. Do not rerun old migrations after v4; they recreate the old policies and triggers.
 - Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`. The service-role key must stay on the server. Public-key fallback is deliberately disabled.
 - Set `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_SECURE`, `EMAIL_USER`, and `EMAIL_PASS`. With Gmail use a mailbox App Password. Normal SMTP certificate validation is enabled.
 - Set `CLIENT_URL`, `CLIENT_LOGIN_URL` and `CLIENT_RESET_PASSWORD_URL` to the frontend URLs. The latter defaults to `<CLIENT_URL>/reset-password`.
