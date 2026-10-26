@@ -1,12 +1,15 @@
 const express = require("express");
 const router = express.Router();
 const buyerController = require("../controllers/buyerController");
-const { authenticate, authorize, requireApproved } = require("../middlewares/authMiddleware");
+const { authenticate, authorize, requireApproved, requirePasswordChanged } = require("../middlewares/authMiddleware");
 const { upload } = require("../config/multer");
 const { ROLES } = require("../models/userModel");
 
 // Common guard for buyer protected routes
-const buyerAuth = [authenticate, authorize(ROLES.BUYER), requireApproved];
+const accountAuth = [authenticate, authorize(ROLES.BUYER), requireApproved];
+const buyerAuth = [...accountAuth, requirePasswordChanged];
+const { forgotPassword, resetPassword, changePassword } = require("../controllers/accountController");
+const { registrationLimit, loginLimit, recoveryLimit, passwordLimit } = require("../middlewares/rateLimits");
 
 // ================================================================
 // PUBLIC ROUTES
@@ -14,11 +17,12 @@ const buyerAuth = [authenticate, authorize(ROLES.BUYER), requireApproved];
 
 /**
  * @route   POST /api/buyer/register
- * @desc    Submit a new buyer registration request (after OTP verification)
+ * @desc    Submit a new buyer registration request (manual admin review; no OTP)
  * @access  Public
  */
 router.post(
     "/register",
+    registrationLimit,
     upload.single("photo"),
     buyerController.buyerRegister
 );
@@ -28,7 +32,10 @@ router.post(
  * @desc    Existing approved buyer login using credentials from approval email
  * @access  Public
  */
-router.post("/login", buyerController.buyerLogin);
+router.post("/login", loginLimit, buyerController.buyerLogin);
+router.post("/forgot-password", recoveryLimit, forgotPassword(ROLES.BUYER));
+router.post("/reset-password", passwordLimit, resetPassword(ROLES.BUYER));
+router.post("/change-password", accountAuth, passwordLimit, changePassword);
 
 // ================================================================
 // PROTECTED ROUTES (Authenticated + Approved Buyers only)
@@ -39,7 +46,7 @@ router.post("/login", buyerController.buyerLogin);
  * @desc    Get authenticated buyer's own profile (including call availability)
  * @access  Protected (Buyer, Approved)
  */
-router.get("/profile", buyerAuth, buyerController.getBuyerProfile);
+router.get("/profile", accountAuth, buyerController.getBuyerProfile);
 
 // ----------------------------------------------------------------
 // CALL AVAILABILITY

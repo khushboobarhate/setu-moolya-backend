@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "setumoolya-v2-collection",
-    "name": "SetuMoolya API v2.0 — Admin | Farmer | Buyer",
-    "description": "Complete API test collection for SetuMoolya backend.\n\n**Flow:**\n1. OTP → Send & Verify (get phone_verified_token)\n2. Farmer/Buyer → Register (with photo)\n3. Admin → Login → Dashboard → Approve/Reject\n4. Farmer/Buyer → Login with approved credentials\n5. Farmer/Buyer → View Profile\n\n**Base URL:** http://localhost:5000",
+    "_postman_id": "setumoolya-v4-collection",
+    "name": "SetuMoolya API v4.0 — Admin | Farmer | Buyer",
+    "description": "Registration → admin review → approve and email random temporary credentials → password change/recovery → marketplace. No SMS OTP. The registered email is the login ID. See README for frontend integration and migration instructions.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -23,11 +23,6 @@
     },
     {
       "key": "buyer_token",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "phone_verified_token",
       "value": "",
       "type": "string"
     },
@@ -63,6 +58,26 @@
     },
     {
       "key": "crop_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "farmer_email",
+      "value": "farmer@example.com",
+      "type": "string"
+    },
+    {
+      "key": "buyer_email",
+      "value": "buyer@example.com",
+      "type": "string"
+    },
+    {
+      "key": "reset_token_hash",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "admin_password",
       "value": "",
       "type": "string"
     }
@@ -128,145 +143,10 @@
       ]
     },
     {
-      "name": "📱 OTP — Mobile Verification",
-      "item": [
-        {
-          "name": "1. Send OTP",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "var res = pm.response.json();",
-                  "var requestBody = JSON.parse(pm.request.body.raw);",
-                  "pm.collectionVariables.set('otp_phone', requestBody.phone);",
-                  "if (res.success && res.otp) {",
-                  "    // DEV provider only: MSG91 sends its OTP by SMS.",
-                  "    pm.collectionVariables.set('otp_code', res.otp);",
-                  "    console.log('Development OTP captured.');",
-                  "}",
-                  "pm.test('OTP request is handled', function () {",
-                  "    pm.expect([200, 409]).to.include(pm.response.code);",
-                  "    if (pm.response.code === 200) pm.expect(res.success).to.be.true;",
-                  "    if (pm.response.code === 409) pm.expect(res.message).to.include('MSG91 browser widget');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"+919876543210\"\n}"
-            },
-            "url": {
-              "raw": "{{BASE_URL}}/api/otp/send",
-              "host": [
-                "{{BASE_URL}}"
-              ],
-              "path": [
-                "api",
-                "otp",
-                "send"
-              ]
-            },
-            "description": "Send an OTP using Twilio or the development provider. With `SMS_PROVIDER=msg91`, send the OTP from the MSG91 browser widget instead; this endpoint intentionally returns 409 in widget mode. After the widget verifies the code, submit its `data[\"access-token\"]` and the same phone to the Verify request. For local dev, use the `otp` returned by this request."
-          },
-          "response": []
-        },
-        {
-          "name": "2. Verify OTP (Get phone_verified_token)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "var res = pm.response.json();",
-                  "if (res.success && res.phone_verified_token) {",
-                  "    pm.collectionVariables.set('phone_verified_token', res.phone_verified_token);",
-                  "    console.log('phone_verified_token saved:', res.phone_verified_token);",
-                  "}",
-                  "pm.test('OTP verified and token received', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    pm.expect(res.success).to.be.true;",
-                  "    pm.expect(res.phone_verified_token).to.be.a('string');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"+919876543210\",\n  \"access_token\": \"<MSG91 widget data[access-token]>\"\n}"
-            },
-            "url": {
-              "raw": "{{BASE_URL}}/api/otp/verify",
-              "host": [
-                "{{BASE_URL}}"
-              ],
-              "path": [
-                "api",
-                "otp",
-                "verify"
-              ]
-            },
-            "description": "With `SMS_PROVIDER=msg91`, submit the same phone used in the widget and the JWT from `data[\"access-token\"]`; the backend validates it with MSG91 before issuing `phone_verified_token`. With Twilio/dev, replace `access_token` with the numeric `otp` field. The verified registration token is saved for the registration request."
-          },
-          "response": []
-        },
-        {
-          "name": "❌ Verify OTP — Wrong OTP (Error Case)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"+919876543210\",\n  \"access_token\": \"invalid-widget-token\"\n}"
-            },
-            "url": {
-              "raw": "{{BASE_URL}}/api/otp/verify",
-              "host": [
-                "{{BASE_URL}}"
-              ],
-              "path": [
-                "api",
-                "otp",
-                "verify"
-              ]
-            },
-            "description": "Expected: 400 Bad Request — Invalid OTP."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
       "name": "🌾 Farmer Module",
       "item": [
         {
-          "name": "1. Farmer Register (with Photo)",
+          "name": "1. Farmer Register (optional photo, no OTP)",
           "event": [
             {
               "listen": "test",
@@ -298,6 +178,12 @@
                   "type": "text"
                 },
                 {
+                  "key": "email",
+                  "value": "{{farmer_email}}",
+                  "type": "text",
+                  "description": "Required real contact mailbox; also used as login ID."
+                },
+                {
                   "key": "age",
                   "value": "38",
                   "type": "text"
@@ -306,7 +192,7 @@
                   "key": "mobile_number",
                   "value": "+919876543210",
                   "type": "text",
-                  "description": "Must match the phone used in OTP verification"
+                  "description": "Contact number for manual admin review; no OTP."
                 },
                 {
                   "key": "nationality",
@@ -345,16 +231,11 @@
                   "description": "Language code: en, hi, mr, gu, ta, te, kn, bn, pa, ml, or, ur, as"
                 },
                 {
-                  "key": "phone_verified_token",
-                  "value": "{{phone_verified_token}}",
-                  "type": "text",
-                  "description": "Auto-filled from OTP Verify step"
-                },
-                {
                   "key": "photo",
                   "type": "file",
                   "src": [],
-                  "description": "Upload a passport-size photo (JPEG/PNG/WEBP, max 5MB)"
+                  "description": "Optional JPEG/PNG/WebP image, maximum 5 MB.",
+                  "disabled": true
                 }
               ]
             },
@@ -369,7 +250,7 @@
                 "register"
               ]
             },
-            "description": "Submit farmer registration request.\n\n**IMPORTANT:**\n- Use `multipart/form-data` (already set)\n- `mobile_number` must match the phone used in OTP step\n- `phone_verified_token` is auto-filled from the OTP Verify step\n- Upload an actual image file in the `photo` field\n- `preferred_language` accepts: en, hi, mr, gu, ta, te, kn, bn, pa, ml, or, ur, as\n\nThe response message will be in the selected language (Marathi in this example)."
+            "description": "Submit details for manual admin review. No account/password is created until approval. Photo, age, nationality and taluka are optional; land_location is required only for farmers. Email is required for credential delivery and recovery."
           },
           "response": []
         },
@@ -702,6 +583,112 @@
             "description": "Farmer initiates call to buyer. Permitted only if buyer expressed interest AND buyer call availability is ON."
           },
           "response": []
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/farmer/forgot-password",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "farmer",
+                "forgot-password"
+              ]
+            },
+            "description": "Emails a single-use reset link for an approved account. Response does not reveal whether an account exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{farmer_email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset password from email link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/farmer/reset-password",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "farmer",
+                "reset-password"
+              ]
+            },
+            "description": "Copy token_hash from the reset email URL fragment into the collection variable. A valid recovery token can be used once.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token_hash\": \"{{reset_token_hash}}\",\n  \"password\": \"New-strong-password1!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change temporary password after login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{farmer_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/farmer/change-password",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "farmer",
+                "change-password"
+              ]
+            },
+            "description": "Set your own password before marketplace use. Log in again afterward and update the saved password variable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{farmer_password}}\",\n  \"password\": \"New-strong-password1!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -709,7 +696,7 @@
       "name": "🛒 Buyer Module",
       "item": [
         {
-          "name": "1. Buyer Register (with Photo)",
+          "name": "1. Buyer Register (optional photo, no OTP)",
           "event": [
             {
               "listen": "test",
@@ -741,6 +728,12 @@
                   "type": "text"
                 },
                 {
+                  "key": "email",
+                  "value": "{{buyer_email}}",
+                  "type": "text",
+                  "description": "Required real contact mailbox; also used as login ID."
+                },
+                {
                   "key": "age",
                   "value": "45",
                   "type": "text"
@@ -749,7 +742,7 @@
                   "key": "mobile_number",
                   "value": "+919876543210",
                   "type": "text",
-                  "description": "Must match the phone used in OTP verification"
+                  "description": "Contact number for manual admin review; no OTP."
                 },
                 {
                   "key": "nationality",
@@ -783,16 +776,11 @@
                   "description": "Language code: en, hi, mr, gu, ta, te, kn, bn, pa, ml, or, ur, as"
                 },
                 {
-                  "key": "phone_verified_token",
-                  "value": "{{phone_verified_token}}",
-                  "type": "text",
-                  "description": "Auto-filled from OTP Verify step"
-                },
-                {
                   "key": "photo",
                   "type": "file",
                   "src": [],
-                  "description": "Upload a passport-size photo (JPEG/PNG/WEBP, max 5MB)"
+                  "description": "Optional JPEG/PNG/WebP image, maximum 5 MB.",
+                  "disabled": true
                 }
               ]
             },
@@ -807,7 +795,7 @@
                 "register"
               ]
             },
-            "description": "Submit buyer registration request.\n\n**Note:** Buyer does NOT have `land_location` field — that is Farmer-only.\n\nThe response message will be in Gujarati (gu) in this example."
+            "description": "Submit details for manual admin review. No account/password is created until approval. Photo, age, nationality and taluka are optional; land_location is required only for farmers. Email is required for credential delivery and recovery."
           },
           "response": []
         },
@@ -1066,6 +1054,112 @@
             "description": "Buyer initiates call to farmer. Permitted only when farmer call availability is ON."
           },
           "response": []
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/buyer/forgot-password",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "buyer",
+                "forgot-password"
+              ]
+            },
+            "description": "Emails a single-use reset link for an approved account. Response does not reveal whether an account exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{buyer_email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset password from email link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/buyer/reset-password",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "buyer",
+                "reset-password"
+              ]
+            },
+            "description": "Copy token_hash from the reset email URL fragment into the collection variable. A valid recovery token can be used once.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token_hash\": \"{{reset_token_hash}}\",\n  \"password\": \"New-strong-password1!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change temporary password after login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/buyer/change-password",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "buyer",
+                "change-password"
+              ]
+            },
+            "description": "Set your own password before marketplace use. Log in again afterward and update the saved password variable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{buyer_password}}\",\n  \"password\": \"New-strong-password1!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -1104,7 +1198,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@setumoolya.com\",\n  \"password\": \"your_admin_password\"\n}"
+              "raw": "{\n  \"email\": \"admin-user@gmail.com\",\n  \"password\": \"{{admin_password}}\"\n}"
             },
             "url": {
               "raw": "{{BASE_URL}}/api/admin/login",
@@ -1117,7 +1211,7 @@
                 "login"
               ]
             },
-            "description": "Admin direct login.\n\nReplace with your actual admin email and password (the one you created in Supabase Auth dashboard).\n\nThe token is automatically saved to `admin_token` collection variable."
+            "description": "Run npm run admin:create with the intended password in the ignored .env file. Set the admin_password collection variable locally; do not save a real password to the repository. The returned token is saved to admin_token."
           },
           "response": []
         },
@@ -1293,7 +1387,7 @@
                 "approve"
               ]
             },
-            "description": "Approve the farmer's registration request.\n\n**What happens on approval:**\n1. A Supabase Auth user is created\n2. A unique login email is generated (e.g. rameshkumar123456@setumoolya.com)\n3. A secure random password is generated\n4. The profile is saved in the profiles table\n5. An approval email is sent with login_id + password + login link\n6. The request status is updated to 'approved'\n\nThe generated `login_id` is saved to the collection variable for the Farmer Login step."
+            "description": "Create an approved account using the submitted real email as login ID and send a cryptographically random temporary password. Check data.email_sent; if false use Send credentials. Repeated approval returns 409."
           },
           "response": []
         },
@@ -1305,6 +1399,10 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
               }
             ],
             "url": {
@@ -1320,7 +1418,11 @@
                 "reject"
               ]
             },
-            "description": "Reject a registration request.\n\n**What happens on rejection:**\n1. Request status updated to 'rejected'\n2. A rejection email is sent asking user to re-check and resubmit details\n\nReplace `PASTE_REQUEST_ID_HERE` with the actual request UUID."
+            "description": "Reject a pending request with a required reason. Rejected applicants can register again.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Please correct the address and resubmit.\"\n}"
+            }
           },
           "response": []
         },
@@ -1366,7 +1468,7 @@
                 "approve"
               ]
             },
-            "description": "Approve the buyer's registration request."
+            "description": "Create an approved account using the submitted real email as login ID and send a cryptographically random temporary password. Check data.email_sent; if false use Send credentials. Repeated approval returns 409."
           },
           "response": []
         },
@@ -1406,7 +1508,7 @@
                 }
               ]
             },
-            "description": "List all approved Farmers or Buyers in the profiles table.\n\nChange `role` to `buyer` to list buyers."
+            "description": "Create an approved account using the submitted real email as login ID and send a cryptographically random temporary password. Check data.email_sent; if false use Send credentials. Repeated approval returns 409."
           },
           "response": []
         },
@@ -1460,7 +1562,7 @@
           "response": []
         },
         {
-          "name": "❌ Approve Already-Approved Request (400)",
+          "name": "❌ Approve Already-Approved Request (409)",
           "request": {
             "method": "POST",
             "header": [
@@ -1482,7 +1584,131 @@
                 "approve"
               ]
             },
-            "description": "Expected: 400 Bad Request — Request already approved, cannot approve again."
+            "description": "Expected: 409 Conflict. Use Send credentials for an approved account still using a temporary password."
+          },
+          "response": []
+        },
+        {
+          "name": "Send farmer temporary credentials again",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/admin/requests/{{farmer_request_id}}/send-credentials",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "requests",
+                "{{farmer_request_id}}",
+                "send-credentials"
+              ]
+            },
+            "description": "Generates a replacement temporary password and emails it. Refused if the user has already chosen a password."
+          },
+          "response": []
+        },
+        {
+          "name": "Send buyer temporary credentials again",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/admin/requests/{{buyer_request_id}}/send-credentials",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "requests",
+                "{{buyer_request_id}}",
+                "send-credentials"
+              ]
+            },
+            "description": "Generates a replacement temporary password and emails it. Refused if the user has already chosen a password."
+          },
+          "response": []
+        },
+        {
+          "name": "Correct pending registration contact email",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/admin/requests/{{farmer_request_id}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "requests",
+                "{{farmer_request_id}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{farmer_email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Registration history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/admin/requests?status=all",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "requests"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all"
+                }
+              ]
+            },
+            "description": ""
           },
           "response": []
         }

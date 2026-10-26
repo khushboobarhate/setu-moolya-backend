@@ -1,14 +1,17 @@
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { randomUUID } = require("node:crypto");
+const extensions = { "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp" };
 
 // Ensure upload directories exist
-const UPLOAD_DIR = path.join(__dirname, "../../uploads/photos");
+const UPLOAD_ROOT = process.env.SETU_UPLOAD_ROOT || path.join(__dirname, "../../uploads");
+const UPLOAD_DIR = path.join(UPLOAD_ROOT, "photos");
 if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-const CROP_UPLOAD_DIR = path.join(__dirname, "../../uploads/crops");
+const CROP_UPLOAD_DIR = path.join(UPLOAD_ROOT, "crops");
 if (!fs.existsSync(CROP_UPLOAD_DIR)) {
     fs.mkdirSync(CROP_UPLOAD_DIR, { recursive: true });
 }
@@ -22,9 +25,7 @@ const storage = multer.diskStorage({
         cb(null, UPLOAD_DIR);
     },
     filename: (req, file, cb) => {
-        const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-        const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, `photo-${uniqueSuffix}${ext}`);
+        cb(null, `photo-${randomUUID()}${extensions[file.mimetype]}`);
     }
 });
 
@@ -36,9 +37,7 @@ const cropStorage = multer.diskStorage({
         cb(null, CROP_UPLOAD_DIR);
     },
     filename: (req, file, cb) => {
-        const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-        const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, `crop-${uniqueSuffix}${ext}`);
+        cb(null, `crop-${randomUUID()}${extensions[file.mimetype]}`);
     }
 });
 
@@ -67,6 +66,9 @@ const upload = multer({
     storage,
     fileFilter,
     limits: {
+        files: 1,
+        fields: 20,
+        fieldSize: 16 * 1024,
         fileSize: 5 * 1024 * 1024 // 5 MB max
     }
 });

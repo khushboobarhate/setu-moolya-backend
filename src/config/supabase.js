@@ -1,53 +1,29 @@
 const { createClient } = require("@supabase/supabase-js");
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
+const configuredValue = (value) => typeof value === "string" && value.trim() && !/your[_-]|change_this/i.test(value);
+const authOptions = { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false };
 let supabase = null;
 let supabaseAdmin = null;
 
-const isConfigured = Boolean(
-    supabaseUrl &&
-    supabaseAnonKey &&
-    !supabaseUrl.includes("your-project-ref") &&
-    !supabaseAnonKey.includes("your_supabase_anon_key")
-);
-
-if (isConfigured) {
+// Never substitute the public client for the service-role client.
+if ([process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, process.env.SUPABASE_SERVICE_ROLE_KEY].every(configuredValue)) {
     try {
-        // Standard client for user-scoped operations
-        supabase = createClient(supabaseUrl, supabaseAnonKey, {
-            auth: {
-                autoRefreshToken: true,
-                persistSession: false
-            }
-        });
-
-        // Admin client with service role key for privileged operations (bypassing RLS)
-        if (supabaseServiceKey && !supabaseServiceKey.includes("your_supabase_service_role_key")) {
-            supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-                auth: {
-                    autoRefreshToken: false,
-                    persistSession: false
-                }
-            });
-        } else {
-            supabaseAdmin = supabase; // Fallback to standard client
-        }
-
-        console.log("✅ Supabase client successfully initialized.");
+        supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, { auth: authOptions });
+        supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: authOptions });
     } catch (error) {
-        console.error("❌ Failed to initialize Supabase client:", error.message);
+        console.error("Supabase initialization failed:", error.message);
+        supabase = null;
+        supabaseAdmin = null;
     }
-} else {
-    console.warn("⚠️  [NOTICE] Supabase credentials not yet detected in .env file.");
-    console.warn("👉  Please configure SUPABASE_URL and SUPABASE_ANON_KEY in your .env file.");
 }
 
-module.exports = {
-    supabase,
-    supabaseAdmin,
-    isConfigured
+const isConfigured = Boolean(supabase && supabaseAdmin);
+
+// Isolate login/recovery sessions between concurrent HTTP requests.
+const createAuthClient = () => {
+    if (!isConfigured) throw new Error("Supabase is not configured.");
+    return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, { auth: authOptions });
 };
+
+module.exports = { supabase, supabaseAdmin, isConfigured, createAuthClient };

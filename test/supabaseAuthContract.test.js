@@ -1,0 +1,44 @@
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const http = require("node:http");
+const { once } = require("node:events");
+
+test("installed Supabase SDK supports isolated login, recovery tokens and atomic password/metadata update", async (t) => {
+    const calls = [];
+    const user = { id: "10000000-0000-4000-8000-000000000003", email: "farmer@example.com", app_metadata: {}, aud: "authenticated" };
+    const server = http.createServer(async (req, res) => {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const body = raw ? JSON.parse(raw) : null;
+        calls.push({ path: req.url, method: req.method, body, authorization: req.headers.authorization });
+        res.setHeader("Content-Type", "application/json");
+        if (req.url.includes("/admin/generate_link")) return res.end(JSON.stringify({ ...user, hashed_token: "a".repeat(64), verification_type: "recovery" }));
+        if (req.url.includes("/token") || req.url.endsWith("/verify")) return res.end(JSON.stringify({ access_token: "test-session", refresh_token: "test-refresh", expires_in: 3600, token_type: "bearer", user }));
+        res.end(JSON.stringify({ user }));
+    });
+    server.listen(0, "127.0.0.1"); await once(server, "listening");
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    process.env.SUPABASE_URL = `http://127.0.0.1:${server.address().port}`;
+    process.env.SUPABASE_ANON_KEY = "test-public-key";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-key";
+    const { createAuthClient, supabase, supabaseAdmin, isConfigured } = require("../src/config/supabase");
+    assert.equal(isConfigured, true);
+    const first = createAuthClient(); const second = createAuthClient();
+    assert.notEqual(first, second);
+    const signedIn = await first.auth.signInWithPassword({ email: user.email, password: "Temporary-password1!" });
+    assert.equal(signedIn.data.user.id, user.id);
+    assert.equal((await second.auth.getSession()).data.session, null);
+    assert.equal((await supabase.auth.getSession()).data.session, null);
+    const generated = await supabaseAdmin.auth.admin.generateLink({ type: "recovery", email: user.email });
+    assert.equal(generated.data.properties.hashed_token, "a".repeat(64));
+    const verified = await second.auth.verifyOtp({ token_hash: generated.data.properties.hashed_token, type: "recovery" });
+    assert.equal(verified.data.user.email, user.email);
+    const updated = await supabaseAdmin.auth.admin.updateUserById(user.id, { password: "New-password123!", app_metadata: { must_change_password: false, temporary_password_expires_at: null } });
+    assert.equal(updated.error, null);
+    assert.deepEqual(calls[1].body, { type: "recovery", email: user.email });
+    assert.equal(calls[2].body.token_hash, "a".repeat(64));
+    assert.equal(calls[2].body.type, "recovery");
+    assert.equal(calls[3].method, "PUT");
+    assert.equal(calls[3].body.app_metadata.must_change_password, false);
+    assert.equal(calls[3].authorization, "Bearer test-service-key");
+});

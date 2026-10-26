@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const adminController = require("../controllers/adminController");
 const { authenticate, authorize } = require("../middlewares/authMiddleware");
+const { loginLimit } = require("../middlewares/rateLimits");
 const { ROLES } = require("../models/userModel");
 
 // ================================================================
@@ -14,7 +15,11 @@ const { ROLES } = require("../models/userModel");
  * @access  Public
  * @body    { email: "admin@setumoolya.com", password: "..." }
  */
-router.post("/login", adminController.adminLogin);
+router.post("/login", loginLimit, adminController.adminLogin);
+
+router.get("/requests", authenticate, authorize(ROLES.ADMIN), adminController.getDashboard);
+router.patch("/requests/:requestId", authenticate, authorize(ROLES.ADMIN), adminController.updateRequestEmail);
+router.post("/requests/:requestId/send-credentials", authenticate, authorize(ROLES.ADMIN), adminController.sendCredentials);
 
 // ================================================================
 // PROTECTED ADMIN ROUTES

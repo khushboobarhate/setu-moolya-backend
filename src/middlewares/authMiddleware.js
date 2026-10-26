@@ -1,4 +1,4 @@
-const { supabase, supabaseAdmin, isConfigured } = require("../config/supabase");
+const { supabase, isConfigured } = require("../config/supabase");
 const { UserModel, ROLES } = require("../models/userModel");
 
 // ================================================================
@@ -39,16 +39,9 @@ const authenticate = async (req, res, next) => {
         }
 
         // Fetch the user profile from public.profiles
-        let profile = await UserModel.findById(authData.user.id);
-        if (!profile) {
-            // Provide a minimal fallback so downstream guards can still check role
-            profile = {
-                id: authData.user.id,
-                email: authData.user.email,
-                role: authData.user.user_metadata?.role || ROLES.FARMER,
-                full_name: authData.user.user_metadata?.full_name || authData.user.email.split("@")[0],
-                is_approved: false
-            };
+        const profile = await UserModel.findById(authData.user.id);
+        if (!profile || !UserModel.isValidRole(profile.role)) {
+            return res.status(403).json({ success: false, message: "An approved platform profile is required." });
         }
 
         req.user = {
@@ -57,6 +50,7 @@ const authenticate = async (req, res, next) => {
             role: profile.role,
             is_approved: profile.is_approved,
             profile,
+            must_change_password: authData.user.app_metadata?.must_change_password === true,
             token
         };
 
@@ -97,6 +91,10 @@ const authorize = (...roles) => {
             });
         }
 
+        if (req.user.role === ROLES.ADMIN && !req.user.is_approved) {
+            return res.status(403).json({ success: false, message: "An approved administrator account is required." });
+        }
+
         next();
     };
 };
@@ -127,8 +125,17 @@ const requireApproved = (req, res, next) => {
     next();
 };
 
+const requirePasswordChanged = (req, res, next) => {
+    if (req.user?.must_change_password) return res.status(403).json({
+        success: false, code: "PASSWORD_CHANGE_REQUIRED",
+        message: "Set your own password using Forgot password or Change password before using the platform."
+    });
+    next();
+};
+
 module.exports = {
     authenticate,
     authorize,
-    requireApproved
+    requireApproved,
+    requirePasswordChanged
 };

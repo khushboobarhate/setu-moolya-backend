@@ -1,12 +1,15 @@
 const express = require("express");
 const router = express.Router();
 const farmerController = require("../controllers/farmerController");
-const { authenticate, authorize, requireApproved } = require("../middlewares/authMiddleware");
+const { authenticate, authorize, requireApproved, requirePasswordChanged } = require("../middlewares/authMiddleware");
 const { upload, uploadCrop } = require("../config/multer");
 const { ROLES } = require("../models/userModel");
 
 // Common guard for farmer protected routes
-const farmerAuth = [authenticate, authorize(ROLES.FARMER), requireApproved];
+const accountAuth = [authenticate, authorize(ROLES.FARMER), requireApproved];
+const farmerAuth = [...accountAuth, requirePasswordChanged];
+const { forgotPassword, resetPassword, changePassword } = require("../controllers/accountController");
+const { registrationLimit, loginLimit, recoveryLimit, passwordLimit } = require("../middlewares/rateLimits");
 
 // ================================================================
 // PUBLIC ROUTES
@@ -14,11 +17,12 @@ const farmerAuth = [authenticate, authorize(ROLES.FARMER), requireApproved];
 
 /**
  * @route   POST /api/farmer/register
- * @desc    Submit a new farmer registration request (after OTP verification)
+ * @desc    Submit a new farmer registration request (manual admin review; no OTP)
  * @access  Public
  */
 router.post(
     "/register",
+    registrationLimit,
     upload.single("photo"),
     farmerController.farmerRegister
 );
@@ -28,7 +32,10 @@ router.post(
  * @desc    Existing approved farmer login using credentials from approval email
  * @access  Public
  */
-router.post("/login", farmerController.farmerLogin);
+router.post("/login", loginLimit, farmerController.farmerLogin);
+router.post("/forgot-password", recoveryLimit, forgotPassword(ROLES.FARMER));
+router.post("/reset-password", passwordLimit, resetPassword(ROLES.FARMER));
+router.post("/change-password", accountAuth, passwordLimit, changePassword);
 
 // ================================================================
 // PROTECTED ROUTES (Authenticated + Approved Farmers only)
@@ -39,7 +46,7 @@ router.post("/login", farmerController.farmerLogin);
  * @desc    Get authenticated farmer's own profile (including call availability)
  * @access  Protected (Farmer, Approved)
  */
-router.get("/profile", farmerAuth, farmerController.getFarmerProfile);
+router.get("/profile", accountAuth, farmerController.getFarmerProfile);
 
 // ----------------------------------------------------------------
 // CALL AVAILABILITY

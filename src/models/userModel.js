@@ -126,9 +126,9 @@ class UserModel {
         let query = client
             .from("registration_requests")
             .select("*", { count: "exact" })
-            .eq("status", status)
             .order("created_at", { ascending: false });
 
+        if (status) query = query.eq("status", status);
         if (role) query = query.eq("role", role);
 
         const { data, error, count } = await query.range(offset, offset + limit - 1);
@@ -177,54 +177,48 @@ class UserModel {
         return data;
     }
 
-    // ----------------------------------------------------------------
-    // OTP MANAGEMENT
-    // ----------------------------------------------------------------
-
-    /**
-     * Store an OTP record for mobile verification
-     */
-    static async storeOtp({ phone, otp, expiresAt }) {
-        if (!isConfigured) throw new Error("Supabase is not configured.");
-        const client = supabaseAdmin || supabase;
-        // Upsert by phone – one pending OTP per phone at a time
-        const { data, error } = await client
-            .from("otp_records")
-            .upsert(
-                { phone, otp, expires_at: expiresAt, is_used: false },
-                { onConflict: "phone" }
-            )
-            .select()
-            .single();
+    static async findActiveRegistrationByEmail(email) {
+        const { data, error } = await supabaseAdmin.from("registration_requests")
+            .select("*").eq("email", email).in("status", [REG_STATUS.PENDING, REG_STATUS.APPROVED]).maybeSingle();
         if (error) throw error;
         return data;
     }
 
-    /**
-     * Verify an OTP for a given phone number
-     * Returns { valid: boolean, message: string }
-     */
-    static async verifyOtp(phone, otp) {
-        if (!isConfigured) throw new Error("Supabase is not configured.");
-        const client = supabaseAdmin || supabase;
-        const { data, error } = await client
-            .from("otp_records")
-            .select("*")
-            .eq("phone", phone)
-            .eq("otp", otp)
-            .eq("is_used", false)
-            .single();
+    static async findByRegistrationRequestId(requestId) {
+        const { data, error } = await supabaseAdmin.from("profiles")
+            .select("*").eq("registration_request_id", requestId).maybeSingle();
+        if (error) throw error;
+        return data;
+    }
 
-        if (error || !data) return { valid: false, message: "Invalid OTP." };
-        if (new Date(data.expires_at) < new Date()) return { valid: false, message: "OTP has expired." };
+    // Database leases serialize review and credential delivery across servers.
+    static async claimRegistrationRequest(requestId, reviewToken) {
+        const { data, error } = await supabaseAdmin.rpc("claim_registration_request", {
+            p_request_id: requestId, p_review_token: reviewToken
+        });
+        if (error) throw error;
+        return data?.[0] || null;
+    }
 
-        // Mark OTP as used
-        await client
-            .from("otp_records")
-            .update({ is_used: true })
-            .eq("phone", phone);
+    static async releaseRegistrationRequest(requestId, reviewToken) {
+        const { error } = await supabaseAdmin.from("registration_requests")
+            .update({ review_token: null, review_started_at: null }).eq("id", requestId).eq("review_token", reviewToken);
+        if (error) throw error;
+    }
 
-        return { valid: true, message: "OTP verified successfully." };
+    static async completeApproval(requestId, userId, reviewToken, adminId) {
+        const { data, error } = await supabaseAdmin.rpc("complete_registration_approval", {
+            p_request_id: requestId, p_user_id: userId, p_review_token: reviewToken, p_admin_id: adminId
+        });
+        if (error) throw error;
+        return data;
+    }
+
+    static async updateReviewedRequest(requestId, reviewToken, updates) {
+        const { data, error } = await supabaseAdmin.from("registration_requests")
+            .update(updates).eq("id", requestId).eq("review_token", reviewToken).select().single();
+        if (error) throw error;
+        return data;
     }
 
     // ----------------------------------------------------------------
@@ -242,6 +236,7 @@ class UserModel {
             .from("profiles")
             .select("*", { count: "exact" })
             .eq("role", role)
+            .eq("is_approved", true)
             .range(offset, offset + limit - 1)
             .order("created_at", { ascending: false });
         if (error) throw error;

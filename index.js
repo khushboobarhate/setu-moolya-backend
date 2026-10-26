@@ -1,15 +1,14 @@
 const express = require("express");
 const cors = require("cors");
-const path = require("path");
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 
 const { isConfigured } = require("./src/config/supabase");
+const { UPLOAD_DIR, CROP_UPLOAD_DIR } = require("./src/config/multer");
 
 // Route Modules
 const adminRoutes = require("./src/routes/adminRoutes");
 const farmerRoutes = require("./src/routes/farmerRoutes");
 const buyerRoutes = require("./src/routes/buyerRoutes");
-const otpRoutes = require("./src/routes/otpRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -31,7 +30,8 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Static file serving – passport photographs & crop listings
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/uploads/photos", express.static(UPLOAD_DIR));
+app.use("/uploads/crops", express.static(CROP_UPLOAD_DIR));
 
 // ================================================================
 // Health & Info Routes
@@ -42,10 +42,12 @@ app.get("/", (req, res) => {
         name: "SetuMoolya (सेतुमूल्य) API",
         tagline: "Every Root Deserves Its Worth – Agricultural E-Commerce Platform",
         status: "online",
-        version: "3.0.0",
-        database: isConfigured ? "Supabase Connected" : "Supabase Pending Configuration in .env",
+        version: "4.0.0",
+        database: isConfigured ? "Supabase Configured" : "Supabase Pending Configuration in .env",
         modules: ["Admin", "Farmer", "Buyer"],
         features: [
+            "Manual Admin Review & Email Credentials (No SMS OTP)",
+            "Temporary Passwords & Email Password Recovery",
             "Farmer Crop Upload & Management",
             "Buyer Crop Catalog & Filter (Organic / Inorganic)",
             "Buyer Interest & 1-5 Star Rating System",
@@ -71,14 +73,13 @@ app.get("/health", (req, res) => {
 app.get("/api/endpoints", (req, res) => {
     res.json({
         status: "active",
-        version: "3.0.0",
+        version: "4.0.0",
         modules: {
-            otp: {
-                sendOtp: "POST /api/otp/send",
-                verifyOtp: "POST /api/otp/verify"
-            },
             admin: {
                 login: "POST /api/admin/login",
+                listRequests: "GET /api/admin/requests?status=pending&role=farmer (Protected – Admin)",
+                sendCredentials: "POST /api/admin/requests/:requestId/send-credentials (Protected – Admin)",
+                updateRequestEmail: "PATCH /api/admin/requests/:requestId (Protected – Admin)",
                 dashboard: "GET /api/admin/dashboard (Protected – Admin)",
                 getRequest: "GET /api/admin/requests/:requestId (Protected – Admin)",
                 approveRequest: "POST /api/admin/requests/:requestId/approve (Protected – Admin)",
@@ -88,8 +89,11 @@ app.get("/api/endpoints", (req, res) => {
                 listCallLogs: "GET /api/admin/call-logs (Protected – Admin)"
             },
             farmer: {
-                register: "POST /api/farmer/register (multipart/form-data)",
+                register: "POST /api/farmer/register (JSON or multipart/form-data; photo optional)",
                 login: "POST /api/farmer/login",
+                forgotPassword: "POST /api/farmer/forgot-password",
+                resetPassword: "POST /api/farmer/reset-password",
+                changePassword: "POST /api/farmer/change-password (Protected)",
                 profile: "GET /api/farmer/profile (Protected – Farmer)",
                 getAvailability: "GET /api/farmer/availability (Protected – Farmer)",
                 setAvailability: "PATCH /api/farmer/availability (Protected – Farmer)",
@@ -101,8 +105,11 @@ app.get("/api/endpoints", (req, res) => {
                 callBuyer: "POST /api/farmer/calls/initiate (Protected – Farmer)"
             },
             buyer: {
-                register: "POST /api/buyer/register (multipart/form-data)",
+                register: "POST /api/buyer/register (JSON or multipart/form-data; photo optional)",
                 login: "POST /api/buyer/login",
+                forgotPassword: "POST /api/buyer/forgot-password",
+                resetPassword: "POST /api/buyer/reset-password",
+                changePassword: "POST /api/buyer/change-password (Protected)",
                 profile: "GET /api/buyer/profile (Protected – Buyer)",
                 getAvailability: "GET /api/buyer/availability (Protected – Buyer)",
                 setAvailability: "PATCH /api/buyer/availability (Protected – Buyer)",
@@ -120,7 +127,6 @@ app.get("/api/endpoints", (req, res) => {
 // Mount API Routes
 // ================================================================
 
-app.use("/api/otp", otpRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/farmer", farmerRoutes);
 app.use("/api/buyer", buyerRoutes);
@@ -145,6 +151,9 @@ app.use((err, req, res, next) => {
     console.error("Unhandled Server Error:", err.stack);
 
     // Handle Multer errors (file upload errors)
+    if (err.name === "MulterError") {
+        return res.status(400).json({ success: false, message: err.message });
+    }
     if (err.code === "LIMIT_FILE_SIZE") {
         return res.status(400).json({
             success: false,
@@ -160,7 +169,7 @@ app.use((err, req, res, next) => {
 
     res.status(err.status || 500).json({
         success: false,
-        message: err.message || "Internal server error occurred."
+        message: err.status && err.status < 500 ? err.message : "Internal server error occurred."
     });
 });
 
@@ -179,7 +188,7 @@ if (process.env.NODE_ENV !== "test") {
         if (!isConfigured) {
             console.log(`⚠️  ACTION NEEDED: Update .env with your Supabase credentials!`);
         } else {
-            console.log(`✅ Supabase Database: Connected`);
+            console.log(`✅ Supabase credentials configured`);
         }
         console.log("=================================================");
     });
