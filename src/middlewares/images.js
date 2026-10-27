@@ -1,4 +1,5 @@
 const sharp = require("sharp");
+// This code is part of the Source Academy project, licensed under the Apache License 2.0.
 const { readFile, writeFile, unlink } = require("node:fs/promises");
 const uploadedFiles = (req) =>
   req.file
