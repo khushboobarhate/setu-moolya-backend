@@ -28,7 +28,7 @@ npm run dev
 - **New database:** run the complete `supabase_schema.sql` in the Supabase SQL Editor. It includes the v4 migration.
 - **Existing v2/v3 database:** run `supabase_migration_v4.sql`; it includes any missing v3 marketplace tables and call-availability column. For an older pre-v2 installation, first apply v2. Do not rerun old migrations after v4; they recreate the old policies and triggers.
 - Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`. The service-role key must stay on the server. Public-key fallback is deliberately disabled.
-- Set `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_SECURE`, `EMAIL_USER`, and `EMAIL_PASS`. With Gmail use a mailbox App Password. Normal SMTP certificate validation is enabled.
+- Set `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_SECURE`, `EMAIL_USER`, and `EMAIL_PASS`. With Gmail use a mailbox App Password. Normal SMTP certificate validation is enabled. Approval messages preserve the farmer/buyer role in their sign-in link; temporary SMTP failures retry up to three times, while a failed delivery remains visible for an admin retry. SMTP acceptance confirms handoff to the mail provider, not final inbox placement.
 - Set `CLIENT_URL`, `CLIENT_LOGIN_URL` and `CLIENT_RESET_PASSWORD_URL` to the frontend URLs. The latter defaults to `<CLIENT_URL>/reset-password`.
 - Set `TEMP_PASSWORD_HOURS` between 1 and 168 (default 48).
 - In Supabase Auth, disable public user signups; accounts are created through the backend admin API. Configure the email recovery token lifetime in the project's Auth settings.
