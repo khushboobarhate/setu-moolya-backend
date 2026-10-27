@@ -1,3 +1,4 @@
+const { findRegistrationAccount, linkPendingProfile } = require("../services/registrationAccount");
 const { randomUUID, randomBytes } = require("node:crypto");
 const { supabaseAdmin, isConfigured } = require("../config/supabase");
 const { UserModel, ROLES, REG_STATUS } = require("../models/userModel");
@@ -8,6 +9,7 @@ const { login } = require("./accountController");
 const { pagination, isUuid, normalizeEmail, isEmail, text } = require("../utils/validation");
 
 const adminLogin = login(ROLES.ADMIN);
+const getAdminProfile = (req, res) => res.status(200).json({ success: true, data: { id: req.user.id, email: req.user.email, full_name: req.user.profile.full_name, role: req.user.role, is_approved: req.user.is_approved, must_change_password: req.user.must_change_password } });
 const publicRequest = ({ review_token, review_started_at, ...request }) => ({
     ...request, is_processing: Boolean(review_token && Date.parse(review_started_at) > Date.now() - 10 * 60 * 1000)
 });
@@ -94,7 +96,7 @@ const approveRequest = review(async (req, res, request, token) => {
     if (!applicantRole(request.role) || !isEmail(request.email)) return res.status(400).json({ success: false, message: "A farmer/buyer role and valid contact email are required. Update the request email before approval." });
     if (!emailService.isEmailConfigured) return res.status(503).json({ success: false, message: "Configure SMTP email before approving registrations." });
     const credentials = temporaryCredentials();
-    let profile = await UserModel.findByRegistrationRequestId(request.id);
+    let profile = await findRegistrationAccount(request);
     // Keep linked accounts after failures: the SQL approval might have committed
     // before a network error, and pending accounts can be recovered on retry.
     if (profile) {
@@ -102,18 +104,20 @@ const approveRequest = review(async (req, res, request, token) => {
         if (profile.is_approved || profile.email !== request.email) throw new Error("Existing account does not match the pending request.");
         const { error } = await supabaseAdmin.auth.admin.updateUserById(profile.id, {
             password: credentials.password,
-            app_metadata: { role: request.role, registration_request_id: request.id, must_change_password: true, temporary_password_expires_at: credentials.expiresAt }
+            app_metadata: { role: request.role, registration_request_id: request.id, must_change_password: true, temporary_password_expires_at: credentials.expiresAt, session_version: randomUUID() }
         });
         if (error) throw error;
     } else {
         const { data, error } = await supabaseAdmin.auth.admin.createUser({
             email: request.email, password: credentials.password, email_confirm: true,
-            app_metadata: { role: request.role, registration_request_id: request.id, must_change_password: true, temporary_password_expires_at: credentials.expiresAt },
+            app_metadata: { role: request.role, registration_request_id: request.id, must_change_password: true, temporary_password_expires_at: credentials.expiresAt, session_version: randomUUID() },
             user_metadata: { full_name: request.full_name, phone: request.mobile_number }
         });
         if (error || !data?.user) throw error || new Error("Account creation failed.");
         profile = { id: data.user.id };
     }
+    // The Auth trigger may run before service app_metadata is populated.
+    await linkPendingProfile(profile.id, request);
     // Profile details and request approval are committed in one SQL transaction.
     await UserModel.completeApproval(request.id, profile.id, token, req.user.id);
     return deliverCredentials(request, profile.id, credentials, token, res);
@@ -125,11 +129,12 @@ const sendCredentials = review(async (req, res, request, token) => {
     if (!isEmail(request.email)) return res.status(400).json({ success: false, message: "A valid contact email is required." });
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(request.approved_user_id);
     if (error || !data?.user) throw error || new Error("Approved account not found.");
+    if (data.user.app_metadata?.demo_account) return res.status(409).json({ success: false, message: "Demo credentials are managed by the demo setup command. No email is sent to reserved demo addresses." });
     if (!data.user.app_metadata?.must_change_password) return res.status(409).json({ success: false, message: "This user has already set a password. They should use Forgot password." });
     const credentials = temporaryCredentials();
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(data.user.id, {
         password: credentials.password,
-        app_metadata: { ...data.user.app_metadata, must_change_password: true, temporary_password_expires_at: credentials.expiresAt }
+        app_metadata: { ...data.user.app_metadata, must_change_password: true, temporary_password_expires_at: credentials.expiresAt, session_version: randomUUID() }
     });
     if (updateError) throw updateError;
     await UserModel.updateReviewedRequest(request.id, token, { credentials_email_status: "pending", credentials_email_sent_at: null });
@@ -142,7 +147,7 @@ const rejectRequest = review(async (req, res, request, token) => {
     if (!reason || reason.length > 2000) return res.status(400).json({ success: false, message: "Provide a rejection reason of 1–2000 characters." });
     // An interrupted approval may have created an unapproved account. Remove it
     // before rejection so the applicant can submit corrected details.
-    const orphan = await UserModel.findByRegistrationRequestId(request.id);
+    const orphan = await findRegistrationAccount(request);
     if (orphan) {
         if (orphan.is_approved) throw new Error("An approved account is linked to this pending request.");
         const { error } = await supabaseAdmin.auth.admin.deleteUser(orphan.id);
@@ -204,4 +209,4 @@ const listAllCallLogs = async (req, res) => {
     }
 };
 
-module.exports = { adminLogin, getDashboard, approveRequest, sendCredentials, rejectRequest, updateRequestEmail, getRequestDetail, listApprovedUsers, listAllCrops, listAllCallLogs };
+module.exports = { adminLogin, getAdminProfile, getDashboard, approveRequest, sendCredentials, rejectRequest, updateRequestEmail, getRequestDetail, listApprovedUsers, listAllCrops, listAllCallLogs };

@@ -1,3 +1,4 @@
+const { isUuid, validText, availabilityValue } = require("../utils/validation");
 const { UserModel, ROLES } = require("../models/userModel");
 const { CropModel } = require("../models/cropModel");
 const { InterestModel } = require("../models/interestModel");
@@ -34,7 +35,7 @@ const getBuyerProfile = async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to fetch buyer profile.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to fetch buyer profile." });
     }
 };
 
@@ -59,7 +60,7 @@ const getCallAvailability = async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to get call availability.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to get call availability." });
     }
 };
 
@@ -71,19 +72,8 @@ const getCallAvailability = async (req, res) => {
  */
 const setCallAvailability = async (req, res) => {
     try {
-        let isAvailable;
-        if (typeof req.body.is_call_available !== "undefined") {
-            isAvailable = String(req.body.is_call_available).toLowerCase() === "true" || req.body.is_call_available === true;
-        } else if (typeof req.body.status !== "undefined") {
-            isAvailable = String(req.body.status).toUpperCase() === "ON";
-        } else if (typeof req.body.availability !== "undefined") {
-            isAvailable = String(req.body.availability).toUpperCase() === "ON" || req.body.availability === true;
-        } else {
-            return res.status(400).json({
-                success: false,
-                message: "Please provide is_call_available (boolean) or status ('ON'/'OFF')."
-            });
-        }
+        const isAvailable = availabilityValue(req.body);
+        if (isAvailable === null) return res.status(400).json({ success: false, message: 'Use is_call_available: true/false, or status: ON/OFF.' });
 
         const updated = await CallModel.setUserAvailability(req.user.id, isAvailable);
         return res.status(200).json({
@@ -96,7 +86,7 @@ const setCallAvailability = async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to update call availability.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to update call availability." });
     }
 };
 
@@ -114,16 +104,13 @@ const setCallAvailability = async (req, res) => {
 const getAvailableCrops = async (req, res) => {
     try {
         const { crop_type, search } = req.query;
+        if (crop_type !== undefined && !['organic', 'inorganic', 'non-organic'].includes(crop_type) || search !== undefined && !validText(search, 0, 100)) return res.status(400).json({ success: false, message: 'Use a valid crop type and search text of at most 100 characters.' });
         const crops = await CropModel.findAllAvailable({ crop_type, search });
 
         const enriched = await Promise.all(
             crops.map(async (crop) => {
-                let farmer = null;
-                try {
-                    farmer = await UserModel.findById(crop.farmer_id);
-                } catch {
-                    // Fallback
-                }
+                const farmer = await UserModel.findById(crop.farmer_id);
+                if (!farmer?.is_approved || farmer.role !== ROLES.FARMER) return null;
 
                 const farmer_call_available = await CallModel.getUserAvailability(crop.farmer_id);
                 const ratingSummary = await InterestModel.getRatingSummary(crop.id);
@@ -165,12 +152,12 @@ const getAvailableCrops = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            message: `Found ${enriched.length} available crop listing(s).`,
-            data: enriched
+            message: `Found ${enriched.filter(Boolean).length} available crop listing(s).`,
+            data: enriched.filter(Boolean)
         });
     } catch (error) {
         console.error("Buyer Browse Crops Error:", error);
-        return res.status(500).json({ success: false, message: "Failed to fetch crop listings.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to fetch crop listings." });
     }
 };
 
@@ -182,17 +169,14 @@ const getAvailableCrops = async (req, res) => {
 const getCropDetail = async (req, res) => {
     try {
         const { cropId } = req.params;
+        if (!isUuid(cropId)) return res.status(400).json({ success: false, message: 'A valid crop ID is required.' });
         const crop = await CropModel.findById(cropId);
-        if (!crop) {
+        if (!crop || crop.status !== "available") {
             return res.status(404).json({ success: false, message: "Crop listing not found." });
         }
 
-        let farmer = null;
-        try {
-            farmer = await UserModel.findById(crop.farmer_id);
-        } catch {
-            // ignore
-        }
+        const farmer = await UserModel.findById(crop.farmer_id);
+        if (!farmer?.is_approved || farmer.role !== ROLES.FARMER) return res.status(404).json({ success: false, message: 'Crop listing not found.' });
 
         const farmer_call_available = await CallModel.getUserAvailability(crop.farmer_id);
         const ratingSummary = await InterestModel.getRatingSummary(crop.id);
@@ -232,7 +216,7 @@ const getCropDetail = async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to fetch crop details.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to fetch crop details." });
     }
 };
 
@@ -249,6 +233,7 @@ const getCropDetail = async (req, res) => {
 const expressInterest = async (req, res) => {
     try {
         const { cropId } = req.params;
+        if (!isUuid(cropId)) return res.status(400).json({ success: false, message: 'A valid crop ID is required.' });
         const { rating, notes } = req.body;
 
         if (rating === undefined || rating === null) {
@@ -258,19 +243,17 @@ const expressInterest = async (req, res) => {
             });
         }
 
-        const ratingNum = parseInt(rating, 10);
-        if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
-            return res.status(400).json({
-                success: false,
-                message: "Interest rating must be an integer between 1 and 5 stars."
-            });
-        }
+        const ratingNum = typeof rating === 'number' ? rating : typeof rating === 'string' && /^[1-5]$/.test(rating) ? Number(rating) : NaN;
+        if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) return res.status(400).json({ success: false, message: 'Interest rating must be an integer between 1 and 5.' });
+        if (notes !== undefined && !validText(notes, 0, 2000, true)) return res.status(400).json({ success: false, message: 'Notes must be text with at most 2000 characters.' });
 
         const crop = await CropModel.findById(cropId);
-        if (!crop) {
+        if (!crop || crop.status !== "available") {
             return res.status(404).json({ success: false, message: "Crop listing not found." });
         }
 
+        const owner = await UserModel.findById(crop.farmer_id);
+        if (!owner?.is_approved || owner.role !== ROLES.FARMER) return res.status(404).json({ success: false, message: 'Crop listing not found.' });
         const savedInterest = await InterestModel.upsertInterest({
             crop_id: cropId,
             buyer_id: req.user.id,
@@ -293,7 +276,7 @@ const expressInterest = async (req, res) => {
         });
     } catch (error) {
         console.error("Buyer Express Interest Error:", error);
-        return res.status(500).json({ success: false, message: "Failed to record interest rating.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to record interest rating." });
     }
 };
 
@@ -311,7 +294,7 @@ const getMyInterests = async (req, res) => {
             data: interests
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to fetch buyer interests.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to fetch buyer interests." });
     }
 };
 
@@ -329,7 +312,12 @@ const getMyInterests = async (req, res) => {
  */
 const callFarmer = async (req, res) => {
     try {
-        const { farmer_id, crop_id } = req.body;
+        const { farmer_id, crop_id } = req.body || {};
+        if (farmer_id !== undefined && !isUuid(farmer_id) || crop_id !== undefined && !isUuid(crop_id)) return res.status(400).json({ success: false, message: 'Valid farmer and optional crop IDs are required.' });
+        if (crop_id) {
+            const linked = await CropModel.findById(crop_id);
+            if (!linked || linked.status !== 'available' || farmer_id && linked.farmer_id !== farmer_id) return res.status(404).json({ success: false, message: 'Available crop and farmer do not match.' });
+        }
 
         let targetFarmerId = farmer_id;
 
@@ -349,7 +337,7 @@ const callFarmer = async (req, res) => {
         }
 
         const farmer = await UserModel.findById(targetFarmerId);
-        if (!farmer || farmer.role !== ROLES.FARMER) {
+        if (!farmer || farmer.role !== ROLES.FARMER || !farmer.is_approved) {
             return res.status(404).json({ success: false, message: "Farmer profile not found." });
         }
 
@@ -406,7 +394,7 @@ const callFarmer = async (req, res) => {
         });
     } catch (error) {
         console.error("Buyer Call Farmer Error:", error);
-        return res.status(500).json({ success: false, message: "Failed to initiate call to farmer.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to initiate call to farmer." });
     }
 };
 

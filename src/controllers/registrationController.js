@@ -1,7 +1,7 @@
 const { unlink } = require("node:fs/promises");
 const { isConfigured } = require("../config/supabase");
 const { UserModel, ROLES, REG_STATUS } = require("../models/userModel");
-const { text, normalizeEmail, isEmail } = require("../utils/validation");
+const { text, normalizeEmail, isEmail, FIELD_RULES, LANGUAGES, validText, validMobile } = require("../utils/validation");
 
 // The route controls the role; public input cannot grant approval or privileges.
 const register = (role) => async (req, res) => {
@@ -22,10 +22,14 @@ const register = (role) => async (req, res) => {
         const missing = required.filter((key) => !payload[key]);
         if (missing.length) return res.status(400).json({ success: false, message: `Missing required fields: ${missing.join(", ")}` });
         if (!isEmail(payload.email)) return res.status(400).json({ success: false, message: "A valid contact email is required for credentials and password recovery." });
-        payload.mobile_number = payload.mobile_number.replace(/[\s()-]/g, "");
-        if (!/^\+?[0-9]{10,15}$/.test(payload.mobile_number)) {
-            return res.status(400).json({ success: false, message: "Mobile number must contain 10–15 digits, optionally prefixed with '+'." });
+        if (!validMobile(payload.mobile_number)) return res.status(400).json({ success: false, message: "Mobile number must contain exactly 10 digits, without a country code." });
+        for (const [key, [min, max]] of Object.entries(FIELD_RULES)) {
+            if (role === ROLES.BUYER && key === 'land_location') continue;
+            if (payload[key] && !validText(payload[key], min, max, key === 'full_address' || key === 'land_location')) {
+                return res.status(400).json({ success: false, message: `${key} must contain ${min}–${max} characters without control characters.` });
+            }
         }
+        if (payload.preferred_language && !LANGUAGES.includes(payload.preferred_language)) return res.status(400).json({ success: false, message: "Choose a supported language: en, hi, gu, or mr." });
         const age = body.age;
         if (age !== undefined && age !== "" && (typeof age !== "number" && typeof age !== "string" || !/^\d+$/.test(String(age)) || !Number.isInteger(Number(age)) || Number(age) < 18 || Number(age) > 120)) {
             return res.status(400).json({ success: false, message: "Age, when provided, must be an integer between 18 and 120." });

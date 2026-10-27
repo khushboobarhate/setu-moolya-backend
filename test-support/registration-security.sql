@@ -78,4 +78,21 @@ DO $$ BEGIN
     IF (SELECT count(*) FROM public.registration_requests) <> 1 THEN RAISE EXCEPTION 'Admin cannot see requests or RLS recurses'; END IF;
 END $$;
 RESET ROLE;
+-- GoTrue may populate app metadata after the auth.users INSERT trigger.
+INSERT INTO public.registration_requests(id,role,full_name,email,mobile_number)
+VALUES ('20000000-0000-4000-8000-000000000002','buyer','Buyer','buyer@example.com','9876543211');
+INSERT INTO auth.users(id,email) VALUES ('10000000-0000-4000-8000-000000000004','buyer@example.com');
+UPDATE auth.users SET raw_app_meta_data='{"role":"buyer","registration_request_id":"20000000-0000-4000-8000-000000000002","must_change_password":true}' WHERE email='buyer@example.com';
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE email='buyer@example.com' AND NOT is_approved AND registration_request_id IS NULL) THEN RAISE EXCEPTION 'Delayed metadata fixture is invalid'; END IF;
+END $$;
+SELECT count(*) FROM public.claim_registration_request('20000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002');
+SET LOCAL ROLE service_role;
+UPDATE public.profiles SET role='buyer',registration_request_id='20000000-0000-4000-8000-000000000002'
+WHERE id='10000000-0000-4000-8000-000000000004' AND NOT is_approved AND registration_request_id IS NULL;
+SELECT public.complete_registration_approval('20000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000004','30000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001');
+RESET ROLE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE email='buyer@example.com' AND role='buyer' AND is_approved) THEN RAISE EXCEPTION 'Delayed Auth metadata approval failed'; END IF;
+END $$;
 ROLLBACK;

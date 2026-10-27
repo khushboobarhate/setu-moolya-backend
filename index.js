@@ -11,6 +11,11 @@ const farmerRoutes = require("./src/routes/farmerRoutes");
 const buyerRoutes = require("./src/routes/buyerRoutes");
 
 const app = express();
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' });
+    next();
+});
 const PORT = process.env.PORT || 5000;
 
 // ================================================================
@@ -19,15 +24,15 @@ const PORT = process.env.PORT || 5000;
 
 // CORS
 app.use(cors({
-    origin: process.env.CLIENT_URL || "*",
+    origin: (process.env.CLIENT_URL || "http://localhost:3000").split(",").map(value => value.trim()),
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 // Body parsing
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "64kb", strict: true }));
+app.use(express.urlencoded({ extended: false, limit: "64kb", parameterLimit: 30 }));
 
 // Static file serving – passport photographs & crop listings
 app.use("/uploads/photos", express.static(UPLOAD_DIR));
@@ -126,6 +131,11 @@ app.get("/api/endpoints", (req, res) => {
 // ================================================================
 // Mount API Routes
 // ================================================================
+app.use('/api', (req, res, next) => {
+    if (req.body !== undefined && (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))) return res.status(400).json({ success: false, message: 'Request body must be an object.' });
+    req.body ||= {};
+    next();
+});
 
 app.use("/api/admin", adminRoutes);
 app.use("/api/farmer", farmerRoutes);
@@ -148,6 +158,7 @@ app.use((req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+    if (err.type === "entity.parse.failed") return res.status(400).json({ success: false, message: "Request body must contain valid JSON." });
     console.error("Unhandled Server Error:", err.stack);
 
     // Handle Multer errors (file upload errors)

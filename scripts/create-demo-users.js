@@ -4,13 +4,14 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { supabaseAdmin, isConfigured, createAuthClient } = require("../src/config/supabase");
 const { UserModel, ROLES, REG_STATUS } = require("../src/models/userModel");
+const { linkPendingProfile } = require("../src/services/registrationAccount");
 const { register } = require("../src/controllers/registrationController");
 
 const demoDetails = (role) => ({
     full_name: role === ROLES.FARMER ? "Demo Farmer (sample account)" : "Demo Buyer (sample account)",
     email: `${role}@example.com`,
-    // The 000 area code is invalid in NANP; these are not real contact numbers.
-    mobile_number: role === ROLES.FARMER ? "+10000000001" : "+10000000002",
+    // Clearly marked sample numbers, never used for real calls.
+    mobile_number: role === ROLES.FARMER ? "0000000001" : "0000000002",
     state: "Demo State", city: "Demo City", full_address: "Demo address — sample data only",
     ...(role === ROLES.FARMER ? { land_location: "Demo plot — sample data only" } : {}),
     preferred_language: "en"
@@ -42,10 +43,10 @@ const createDemoUsers = async ({ adminEmail = "admin-user@gmail.com" } = {}) => 
             const { data, error } = await supabaseAdmin.auth.admin.getUserById(profile.id);
             if (error) throw error;
             // Never replace a pre-existing non-demo account or change its role.
-            if (!data?.user?.app_metadata?.demo_account || profile.role !== role || !profile.registration_request_id) {
+            if (!data?.user?.app_metadata?.demo_account || data.user.app_metadata.role !== role || profile.is_approved && profile.role !== role || !(profile.registration_request_id || data.user.app_metadata.registration_request_id)) {
                 throw new Error(`${details.email} is already in use by a non-demo account.`);
             }
-            request = await UserModel.findRegistrationRequestById(profile.registration_request_id);
+            request = await UserModel.findRegistrationRequestById(profile.registration_request_id || data.user.app_metadata.registration_request_id);
         } else {
             request = await UserModel.findActiveRegistrationByEmail(details.email);
             if (request && (request.role !== role || request.full_name !== details.full_name)) {
@@ -63,14 +64,17 @@ const createDemoUsers = async ({ adminEmail = "admin-user@gmail.com" } = {}) => 
             profile ||= await UserModel.findByRegistrationRequestId(request.id);
             const attributes = {
                 email: details.email, password, email_confirm: true,
-                app_metadata: { role, registration_request_id: request.id, demo_account: true, must_change_password: true, temporary_password_expires_at: expiresAt },
+                app_metadata: { role, registration_request_id: request.id, demo_account: true, session_version: randomUUID(), must_change_password: true, temporary_password_expires_at: expiresAt },
                 user_metadata: { full_name: details.full_name, phone: details.mobile_number }
             };
             const { data, error } = profile
                 ? await supabaseAdmin.auth.admin.updateUserById(profile.id, attributes)
                 : await supabaseAdmin.auth.admin.createUser(attributes);
             if (error || !data?.user) throw error || new Error("Demo Auth account creation failed.");
-            if (locked.status === REG_STATUS.PENDING) await UserModel.completeApproval(request.id, data.user.id, token, admin.id);
+            if (locked.status === REG_STATUS.PENDING) {
+                await linkPendingProfile(data.user.id, request);
+                await UserModel.completeApproval(request.id, data.user.id, token, admin.id);
+            }
             const { data: login, error: loginError } = await createAuthClient().auth.signInWithPassword({ email: details.email, password });
             const approved = await UserModel.findById(data.user.id);
             if (loginError || login?.user?.id !== data.user.id || approved?.role !== role || !approved.is_approved) {

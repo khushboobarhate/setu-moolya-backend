@@ -1,3 +1,4 @@
+const { randomUUID } = require("node:crypto");
 require("dotenv").config({ quiet: true });
 const { isEmail, normalizeEmail } = require("../src/utils/validation");
 
@@ -33,7 +34,7 @@ const createAdmin = async ({ email, password, fullName, client, createAuthClient
     const full_name = fullName?.trim() || profile?.full_name || "SetuMoolya Admin";
     const attributes = {
         email, password, email_confirm: true,
-        app_metadata: { ...existing?.app_metadata, role: "admin", must_change_password: false, temporary_password_expires_at: null },
+        app_metadata: { ...existing?.app_metadata, role: "admin", session_version: randomUUID(), must_change_password: false, temporary_password_expires_at: null },
         user_metadata: { ...existing?.user_metadata, full_name }
     };
     const { data, error } = existing

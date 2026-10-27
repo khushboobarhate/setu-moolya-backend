@@ -19,7 +19,7 @@ const authenticate = async (req, res, next) => {
         }
 
         const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        if (typeof authHeader !== "string" || !/^Bearer [^\s]{1,8192}$/.test(authHeader)) {
             return res.status(401).json({
                 success: false,
                 message: "Authentication required. Missing or malformed Bearer token in Authorization header."
@@ -30,12 +30,20 @@ const authenticate = async (req, res, next) => {
 
         // Verify token with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.getUser(token);
-        if (authError || !authData.user) {
+        if (authError || !authData?.user) {
             return res.status(401).json({
                 success: false,
-                message: "Invalid or expired token.",
-                error: authError ? authError.message : "User not found"
+                message: "Invalid or expired token."
             });
+        }
+
+        // getUser has verified the JWT. Compare its issued account version with
+        // fresh Auth metadata so a password change invalidates previous API tokens.
+        const version = authData.user.app_metadata?.session_version;
+        if (version) {
+            let issued;
+            try { issued = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).app_metadata?.session_version; } catch {}
+            if (issued !== version) return res.status(401).json({ success: false, message: 'Your session has ended. Please sign in again.' });
         }
 
         // Fetch the user profile from public.profiles
@@ -59,8 +67,7 @@ const authenticate = async (req, res, next) => {
         console.error("Auth Middleware Error:", error);
         return res.status(500).json({
             success: false,
-            message: "Internal server error during authentication.",
-            error: error.message
+            message: "Authentication could not be checked. Please try again."
         });
     }
 };

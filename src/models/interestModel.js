@@ -28,25 +28,14 @@ const writeLocalInterests = (interests) => {
     }
 };
 
-const isSchemaError = (err) => {
-    if (!err) return false;
-    const msg = (err.message || "").toLowerCase();
-    return (
-        msg.includes("could not find the table") ||
-        msg.includes("relation") ||
-        msg.includes("schema cache") ||
-        err.code === "PGRST204" ||
-        err.code === "42P01"
-    );
-};
 
 class InterestModel {
     /**
      * Upsert interest and rating for a crop by a buyer
      */
     static async upsertInterest({ crop_id, buyer_id, rating, notes = "" }) {
-        const ratingNum = parseInt(rating, 10);
-        if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+        const ratingNum = Number(rating);
+        if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
             throw new Error("Rating must be an integer between 1 and 5.");
         }
 
@@ -82,9 +71,7 @@ class InterestModel {
                 return data;
             }
 
-            if (!isSchemaError(error)) {
-                throw error;
-            }
+            throw error || new Error("Database operation returned no result.");
         }
 
         // Fallback local store
@@ -125,11 +112,7 @@ class InterestModel {
 
             if (!error && data) {
                 rawInterests = data;
-            } else if (!isSchemaError(error)) {
-                throw error;
-            } else {
-                rawInterests = readLocalInterests().filter((i) => i.crop_id === crop_id);
-            }
+            } else { throw error || new Error("Database operation returned no result."); }
         } else {
             rawInterests = readLocalInterests().filter((i) => i.crop_id === crop_id);
         }
@@ -137,12 +120,7 @@ class InterestModel {
         // Enrich with buyer profile information
         const enriched = await Promise.all(
             rawInterests.map(async (item) => {
-                let buyer = null;
-                try {
-                    buyer = await UserModel.findById(item.buyer_id);
-                } catch {
-                    // Fallback
-                }
+                const buyer = await UserModel.findById(item.buyer_id);
                 const { CallModel } = require("./callModel");
                 const is_call_available = await CallModel.getUserAvailability(item.buyer_id);
 
@@ -152,8 +130,6 @@ class InterestModel {
                         ? {
                               id: buyer.id,
                               full_name: buyer.full_name,
-                              email: buyer.email,
-                              mobile_number: buyer.mobile_number || buyer.phone,
                               city: buyer.city,
                               state: buyer.state,
                               photo_url: buyer.photo_url,
@@ -183,11 +159,7 @@ class InterestModel {
 
             if (!error && data) {
                 rawInterests = data;
-            } else if (!isSchemaError(error)) {
-                throw error;
-            } else {
-                rawInterests = readLocalInterests().filter((i) => i.buyer_id === buyer_id);
-            }
+            } else { throw error || new Error("Database operation returned no result."); }
         } else {
             rawInterests = readLocalInterests().filter((i) => i.buyer_id === buyer_id);
         }
@@ -200,11 +172,7 @@ class InterestModel {
                 const crop = await CropModel.findById(item.crop_id);
                 let farmer = null;
                 if (crop) {
-                    try {
-                        farmer = await UserModel.findById(crop.farmer_id);
-                    } catch {
-                        // ignore
-                    }
+                    farmer = await UserModel.findById(crop.farmer_id);
                 }
                 const farmer_call_available = crop
                     ? await CallModel.getUserAvailability(crop.farmer_id)
@@ -244,7 +212,7 @@ class InterestModel {
 
             if (!error && data) return true;
             if (error && error.code === "PGRST116") return false;
-            if (!isSchemaError(error)) throw error;
+            throw error || new Error("Database operation returned no result.");
         }
 
         const interests = readLocalInterests();
@@ -272,7 +240,7 @@ class InterestModel {
 
             if (!error && data && data.length > 0) return true;
             if (!error && data && data.length === 0) return false;
-            if (!isSchemaError(error)) throw error;
+            throw error || new Error("Database operation returned no result.");
         }
 
         const interests = readLocalInterests();

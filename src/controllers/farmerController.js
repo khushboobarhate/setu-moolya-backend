@@ -1,3 +1,5 @@
+const { isUuid, validText, decimal, CROP_UNITS, availabilityValue } = require("../utils/validation");
+const { uploadedFiles, cleanupUploads, removeCropImages } = require("../middlewares/images");
 const { UserModel, ROLES } = require("../models/userModel");
 const { CropModel } = require("../models/cropModel");
 const { InterestModel } = require("../models/interestModel");
@@ -34,7 +36,7 @@ const getFarmerProfile = async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to fetch farmer profile.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to fetch farmer profile." });
     }
 };
 
@@ -59,7 +61,7 @@ const getCallAvailability = async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to get call availability.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to get call availability." });
     }
 };
 
@@ -71,19 +73,8 @@ const getCallAvailability = async (req, res) => {
  */
 const setCallAvailability = async (req, res) => {
     try {
-        let isAvailable;
-        if (typeof req.body.is_call_available !== "undefined") {
-            isAvailable = String(req.body.is_call_available).toLowerCase() === "true" || req.body.is_call_available === true;
-        } else if (typeof req.body.status !== "undefined") {
-            isAvailable = String(req.body.status).toUpperCase() === "ON";
-        } else if (typeof req.body.availability !== "undefined") {
-            isAvailable = String(req.body.availability).toUpperCase() === "ON" || req.body.availability === true;
-        } else {
-            return res.status(400).json({
-                success: false,
-                message: "Please provide is_call_available (boolean) or status ('ON'/'OFF')."
-            });
-        }
+        const isAvailable = availabilityValue(req.body);
+        if (isAvailable === null) return res.status(400).json({ success: false, message: 'Use is_call_available: true/false, or status: ON/OFF.' });
 
         const updated = await CallModel.setUserAvailability(req.user.id, isAvailable);
         return res.status(200).json({
@@ -96,7 +87,7 @@ const setCallAvailability = async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to update call availability.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to update call availability." });
     }
 };
 
@@ -110,86 +101,30 @@ const setCallAvailability = async (req, res) => {
  * @access  Protected (Farmer)
  */
 const uploadCrop = async (req, res) => {
+    let saved = false;
     try {
-        const {
-            crop_name,
-            name,
-            title,
-            crop_type,
-            quantity,
-            quantity_unit = "kg",
-            price,
-            required_price,
-            description
-        } = req.body;
-
-        const cropNameFinal = (crop_name || name || title || "").trim();
-        const priceFinal = price !== undefined ? price : required_price;
-
-        if (!cropNameFinal) {
-            return res.status(400).json({ success: false, message: "Crop name is required." });
-        }
-        if (!crop_type) {
-            return res.status(400).json({ success: false, message: "Crop type (organic or inorganic) is required." });
-        }
-        const normType = crop_type.toLowerCase();
-        if (!["organic", "inorganic", "non-organic"].includes(normType)) {
-            return res.status(400).json({
-                success: false,
-                message: "Crop type must be either 'organic' or 'inorganic' (non-organic)."
-            });
-        }
-        if (quantity === undefined || isNaN(parseFloat(quantity)) || parseFloat(quantity) <= 0) {
-            return res.status(400).json({ success: false, message: "A valid positive crop quantity is required." });
-        }
-        if (priceFinal === undefined || isNaN(parseFloat(priceFinal)) || parseFloat(priceFinal) < 0) {
-            return res.status(400).json({ success: false, message: "A valid required price is required." });
-        }
-
-        // Process uploaded photos
-        const photoUrls = [];
-        if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-            req.files.forEach((f) => photoUrls.push(`/uploads/crops/${f.filename}`));
-        } else if (req.files && typeof req.files === "object") {
-            const fileList = req.files.photos || req.files.photo || [];
-            fileList.forEach((f) => photoUrls.push(`/uploads/crops/${f.filename}`));
-        } else if (req.file) {
-            photoUrls.push(`/uploads/crops/${req.file.filename}`);
-        } else if (req.body.photos) {
-            // Support passing pre-uploaded photo URL(s)
-            if (Array.isArray(req.body.photos)) {
-                photoUrls.push(...req.body.photos);
-            } else if (typeof req.body.photos === "string") {
-                try {
-                    const parsed = JSON.parse(req.body.photos);
-                    if (Array.isArray(parsed)) photoUrls.push(...parsed);
-                    else photoUrls.push(req.body.photos);
-                } catch {
-                    photoUrls.push(req.body.photos);
-                }
-            }
-        }
-
-        const crop = await CropModel.createCrop({
-            farmer_id: req.user.id,
-            crop_name: cropNameFinal,
-            crop_type: normType,
-            quantity: parseFloat(quantity),
-            quantity_unit: quantity_unit || "kg",
-            price: parseFloat(priceFinal),
-            description: (description || "").trim(),
-            photos: photoUrls
-        });
-
-        return res.status(201).json({
-            success: true,
-            message: "Crop listing uploaded successfully.",
-            data: crop
-        });
+        const body = req.body || {};
+        const crop_name = body.crop_name ?? body.name ?? body.title;
+        const price = decimal(body.price ?? body.required_price);
+        const quantity = decimal(body.quantity, { min: 0.001, places: 3 });
+        const type = typeof body.crop_type === 'string' ? body.crop_type.toLowerCase() : '';
+        const crop_type = type === 'non-organic' ? 'inorganic' : type;
+        const unit = body.quantity_unit ?? 'kg';
+        if (!validText(crop_name, 2, 150)) return res.status(400).json({ success: false, message: 'Crop name must contain 2–150 characters.' });
+        if (!['organic', 'inorganic'].includes(crop_type)) return res.status(400).json({ success: false, message: 'Choose organic or inorganic for the crop type.' });
+        if (quantity === null) return res.status(400).json({ success: false, message: 'Quantity must be 0.001–1,000,000,000, with up to 3 decimal places.' });
+        if (price === null) return res.status(400).json({ success: false, message: 'Price must be 0–1,000,000,000, with up to 2 decimal places.' });
+        if (!CROP_UNITS.includes(unit)) return res.status(400).json({ success: false, message: 'Choose kg, gram, quintal, or tonne.' });
+        if (body.description !== undefined && !validText(body.description, 0, 3000, true)) return res.status(400).json({ success: false, message: 'Description must be text with at most 3000 characters.' });
+        if (body.photos !== undefined) return res.status(400).json({ success: false, message: 'Upload image files; external photo URLs are not accepted.' });
+        const photos = uploadedFiles(req).map(file => `/uploads/crops/${file.filename}`);
+        const crop = await CropModel.createCrop({ farmer_id: req.user.id, crop_name: crop_name.trim(), crop_type, quantity, quantity_unit: unit, price, description: (body.description || '').trim(), photos });
+        saved = true;
+        return res.status(201).json({ success: true, message: 'Crop listing uploaded successfully.', data: crop });
     } catch (error) {
-        console.error("Upload Crop Error:", error);
-        return res.status(500).json({ success: false, message: "Failed to upload crop.", error: error.message });
-    }
+        console.error('Crop upload failed:', error.message);
+        return res.status(500).json({ success: false, message: 'Failed to upload crop. Please try again.' });
+    } finally { if (!saved) await cleanupUploads(req); }
 };
 
 /**
@@ -222,7 +157,7 @@ const getMyCrops = async (req, res) => {
             data: enriched
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to fetch farmer crops.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to fetch farmer crops." });
     }
 };
 
@@ -234,6 +169,7 @@ const getMyCrops = async (req, res) => {
 const getCropDetail = async (req, res) => {
     try {
         const { cropId } = req.params;
+        if (!isUuid(cropId)) return res.status(400).json({ success: false, message: 'A valid crop ID is required.' });
         const crop = await CropModel.findById(cropId);
         if (!crop || crop.farmer_id !== req.user.id) {
             return res.status(404).json({ success: false, message: "Crop not found or unauthorized access." });
@@ -253,7 +189,7 @@ const getCropDetail = async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to fetch crop detail.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to fetch crop detail." });
     }
 };
 
@@ -265,13 +201,17 @@ const getCropDetail = async (req, res) => {
 const deleteCrop = async (req, res) => {
     try {
         const { cropId } = req.params;
+        if (!isUuid(cropId)) return res.status(400).json({ success: false, message: 'A valid crop ID is required.' });
+        const crop = await CropModel.findById(cropId);
+        if (!crop || crop.farmer_id !== req.user.id) return res.status(404).json({ success: false, message: 'Crop listing not found or unauthorized.' });
         const deleted = await CropModel.deleteCrop(cropId, req.user.id);
         if (!deleted) {
             return res.status(404).json({ success: false, message: "Crop listing not found or unauthorized." });
         }
+        await removeCropImages(crop);
         return res.status(200).json({ success: true, message: "Crop listing deleted successfully." });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to delete crop.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to delete crop." });
     }
 };
 
@@ -287,6 +227,7 @@ const deleteCrop = async (req, res) => {
 const getFarmerInterests = async (req, res) => {
     try {
         const { cropId } = req.query;
+        if (cropId !== undefined && !isUuid(cropId)) return res.status(400).json({ success: false, message: 'A valid crop ID is required.' });
         const farmerCrops = await CropModel.findByFarmerId(req.user.id);
         const relevantCrops = cropId
             ? farmerCrops.filter((c) => c.id === cropId)
@@ -315,7 +256,7 @@ const getFarmerInterests = async (req, res) => {
             data: allInterests
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: "Failed to fetch buyer interests.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to fetch buyer interests." });
     }
 };
 
@@ -334,13 +275,14 @@ const getFarmerInterests = async (req, res) => {
  */
 const callBuyer = async (req, res) => {
     try {
-        const { buyer_id, crop_id } = req.body;
+        const { buyer_id, crop_id } = req.body || {};
+        if (!isUuid(buyer_id) || crop_id !== undefined && !isUuid(crop_id)) return res.status(400).json({ success: false, message: 'Valid buyer and optional crop IDs are required.' });
         if (!buyer_id) {
             return res.status(400).json({ success: false, message: "buyer_id is required." });
         }
 
         const buyer = await UserModel.findById(buyer_id);
-        if (!buyer || buyer.role !== ROLES.BUYER) {
+        if (!buyer || buyer.role !== ROLES.BUYER || !buyer.is_approved) {
             return res.status(404).json({ success: false, message: "Buyer profile not found." });
         }
 
@@ -426,7 +368,7 @@ const callBuyer = async (req, res) => {
         });
     } catch (error) {
         console.error("Farmer Call Buyer Error:", error);
-        return res.status(500).json({ success: false, message: "Failed to initiate call.", error: error.message });
+        return res.status(500).json({ success: false, message: "Failed to initiate call." });
     }
 };
 

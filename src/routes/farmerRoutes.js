@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { validateImages } = require("../middlewares/images");
 const farmerController = require("../controllers/farmerController");
 const { authenticate, authorize, requireApproved, requirePasswordChanged } = require("../middlewares/authMiddleware");
 const { upload, uploadCrop } = require("../config/multer");
@@ -24,6 +25,7 @@ router.post(
     "/register",
     registrationLimit,
     upload.single("photo"),
+    validateImages,
     farmerController.farmerRegister
 );
 
@@ -86,6 +88,7 @@ router.post(
         { name: "photos", maxCount: 10 },
         { name: "photo", maxCount: 1 }
     ]),
+    validateImages,
     farmerController.uploadCrop
 );
 

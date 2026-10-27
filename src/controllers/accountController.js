@@ -48,6 +48,10 @@ const forgotPassword = (role) => async (req, res) => {
         const profile = await UserModel.findByEmail(email);
         // Keep the same response for unknown, pending, rejected and wrong-role accounts.
         if (profile?.is_approved && profile.role === role) {
+            const account = await supabaseAdmin.auth.admin.getUserById(profile.id);
+            if (account.error) throw account.error;
+            // Reserved demo mailboxes never receive real messages.
+            if (account.data?.user?.app_metadata?.demo_account) return res.status(200).json({ success: true, message: recoveryMessage });
             const { data, error } = await supabaseAdmin.auth.admin.generateLink({ type: "recovery", email });
             if (error || !data?.properties?.hashed_token) throw error || new Error("Recovery token was not generated.");
             const resetUrl = new URL(process.env.CLIENT_RESET_PASSWORD_URL || `${process.env.CLIENT_URL || "http://localhost:3000"}/reset-password`);
@@ -80,7 +84,7 @@ const updatePassword = async (user, password) => {
         if (readError || !data?.user) throw readError || new Error("Account not found.");
         const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
             password,
-            app_metadata: { ...data.user.app_metadata, must_change_password: false, temporary_password_expires_at: null }
+            app_metadata: { ...data.user.app_metadata, must_change_password: false, temporary_password_expires_at: null, session_version: randomUUID() }
         });
         if (error) throw error;
     } finally {
@@ -115,7 +119,7 @@ const changePassword = async (req, res) => {
     }
     try {
         const { data, error } = await createAuthClient().auth.signInWithPassword({ email: req.user.email, password: current_password });
-        if (error || data?.user?.id !== req.user.id) return res.status(401).json({ success: false, message: "Current password is incorrect." });
+        if (error || data?.user?.id !== req.user.id) return res.status(400).json({ success: false, message: "Current password is incorrect." });
         await updatePassword(data.user, password);
         return res.status(200).json({ success: true, message: "Password updated. Log in with your new password." });
     } catch (error) {

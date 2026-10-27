@@ -8,7 +8,8 @@
     "dev": "nodemon index.js",
     "test": "node --require ./test-support/setup.js --test",
     "admin:create": "node scripts/create-admin.js",
-    "demo:create": "node scripts/create-demo-users.js"
+    "demo:create": "node scripts/create-demo-users.js",
+    "test:sql": "node test-support/run-sql-security.cjs"
   },
   "keywords": [
     "agritech",
@@ -30,6 +31,7 @@
     "express-rate-limit": "^8.7.1",
     "multer": "^2.5.0",
     "nodemailer": "^10.2.1",
+    "sharp": "^0.35.5",
     "uuid": "^11.1.0"
   },
   "devDependencies": {

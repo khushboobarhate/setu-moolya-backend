@@ -65,7 +65,7 @@ The Supabase API keys alone cannot apply SQL migrations. If the database still h
 {
   "full_name": "Ramesh Sharma",
   "email": "ramesh@example.com",
-  "mobile_number": "+919876543210",
+  "mobile_number": "9876543210",
   "state": "Maharashtra",
   "city": "Pune",
   "full_address": "12 Market Road, Pune",
@@ -76,6 +76,8 @@ The Supabase API keys alone cannot apply SQL migrations. If the database still h
   "preferred_language": "mr"
 }
 ```
+
+Mobile numbers must contain exactly 10 digits without a country code. Names, states and cities are 2–100 characters; full addresses are 10–500; farm locations are 3–500. Optional nationality and taluka have bounded lengths. Preferred language must be `en`, `hi`, `mr` or `gu`. Uploaded images are decoded, limited to 32 megapixels, stripped of metadata and normalized to WebP.
 
 Required: `full_name`, `email`, `mobile_number`, `state`, `city`, `full_address`; farmers additionally require `land_location`. `age` (18–120), nationality, taluka, preferred language (default `en`) and photo are optional. Buyers do not need land details. Role and approval status come from the server. One active registration/account per email is allowed, across both roles.
 
@@ -88,6 +90,8 @@ All protected calls require `Authorization: Bearer <token>`.
 | Action | Endpoint | Body / behavior |
 | --- | --- | --- |
 | Login | `POST /api/admin/login` | `{ "email": "...", "password": "..." }`; token at `data.token` |
+| Own profile | `GET /api/admin/profile` | Approved admin identity, fetched from the database |
+| Change admin password | `POST /api/admin/change-password` | Current password and a strong new password; sign in again afterward |
 | Pending dashboard | `GET /api/admin/dashboard` | `data.pending_requests` and `data.requests`, plus `data.pagination` |
 | All/filter requests | `GET /api/admin/requests?status=all&role=farmer&page=1&limit=50` | Status: `pending` (default), `approved`, `rejected`, `all`. Role optional: farmer/buyer. Limit 1–100. |
 | Review details | `GET /api/admin/requests/:requestId` | Complete registration fields, review information and email status |
@@ -101,7 +105,7 @@ All protected calls require `Authorization: Bearer <token>`.
 
 Approval responds with `data.request_id`, `user_id`, `login_id`, `role`, `status`, `email_sent`, `credentials_email_status` and `can_resend_credentials`. The admin panel must inspect `email_sent`; an approved account does not mean SMTP accepted its email. SMTP acceptance does not guarantee inbox delivery.
 
-Refresh the request after network failures before retrying. Concurrent review actions return 409. Profile and request approval are committed together in PostgreSQL. An interrupted account-creation step leaves an unapproved account linked to the request; retrying approval recovers it. A crashed process's review lease can be reclaimed after ten minutes. Credentials are generated only in memory and sent only to the registered contact email.
+Refresh the request after network failures before retrying. Concurrent review actions return 409. Profile and request approval are committed together in PostgreSQL. Supabase can create the initial profile before trusted Auth metadata is available. The backend verifies that metadata after account creation and links the unapproved profile before the approval transaction. Retrying approval recovers that handoff without adopting unrelated accounts. A crashed process's review lease can be reclaimed after ten minutes. Credentials are generated only in memory and sent only to the registered contact email.
 
 ## Farmer/buyer login and passwords
 
@@ -131,7 +135,7 @@ Passwords must be 12–128 characters with uppercase, lowercase, a number and a 
 
 Farmer crop uploads/list/detail/delete, buyer crop browsing/interests, role profiles, call availability and direct-contact call permissions retain their existing routes. `GET /api/endpoints` lists them. Calling reveals a permitted contact number; it does not place a paid provider call.
 
-Only `/uploads/photos` and `/uploads/crops` are served publicly. Local JSON data under `uploads/data` is no longer exposed. The existing marketplace models retain their local JSON fallback; production deployments should apply the SQL migrations so these models use the database. Uploads need persistent local storage on the backend host.
+Only `/uploads/photos` and `/uploads/crops` are served publicly. Local JSON data under `uploads/data` is no longer exposed. With Supabase configured, database/schema errors fail the request; they never fall back to local JSON or assume that a member is available. Local JSON storage exists only for isolated unconfigured tests. Local stores and uploads are ignored by Git. Uploads need persistent local storage on the backend host.
 
 ## Migrating existing data and clients
 
@@ -154,9 +158,20 @@ Frontend changes are required: remove OTP screens, collect email during registra
 
 ```sh
 npm test
+npm run test:sql
 npm audit
 ```
 
 The automated suite covers onboarding through the HTTP routes with mocked external Supabase/SMTP boundaries, including both roles, email failure/retry, duplicate/concurrent actions, password recovery and authorization, plus existing marketplace behavior. Tests use temporary local stores and never service credentials.
 
-For PostgreSQL validation, use a **new isolated test database**, never a production database. `test-support/supabase-fixture.sql` supplies a minimal Auth surface for local PostgreSQL. Run it, then `supabase_schema.sql`, optionally rerun `supabase_migration_v4.sql`, then `test-support/registration-security.sql`. The latter checks SQL approval, review leases, duplicate-email constraints, role escalation protection and RLS, and rolls back its test data. Real Supabase Auth and SMTP delivery still need deployment credentials for an end-to-end integration check.
+For PostgreSQL validation, use a **new isolated test database**, never a production database. `test-support/supabase-fixture.sql` supplies a minimal Auth surface for local PostgreSQL. Run it, then `supabase_schema.sql`, optionally rerun `supabase_migration_v4.sql`, then `test-support/registration-security.sql`. The latter checks SQL approval, review leases, duplicate-email constraints, role escalation protection and RLS, and rolls back its test data. The SQL runner creates and destroys its own local PostgreSQL cluster, checks both a fresh schema and repeated v2-to-v4 upgrades, and never connects to the live database. PostgreSQL server binaries must be installed.
+
+## Review verification (27 October 2026)
+
+The regression suite covers strict form/crop inputs, disguised uploads, protected roles, ownership, failed database operations, privacy gates, forged credentials and invalidated password sessions. Password changes and replacement credentials issue a new account session version; older API tokens are rejected. Clearing a browser session removes its HttpOnly cookies.
+
+A controlled live audit passed against the migrated Supabase database using disposable admin, farmer and buyer accounts. It covered real approval, email failure/retry with captured messages, password change/recovery, crop uploads/search, interests, availability, ownership and direct RLS/RPC denial. All disposable audit records were removed. SMTP connection and authentication were separately verified; inbox delivery has not been tested. No real emails were sent to sample addresses.
+
+The opt-in audit is `ALLOW_LIVE_DEMO_AUDIT=true node test-support/live-demo-audit.cjs`. It requires server-side service credentials and an existing ignored demo credentials file. It changes only uniquely generated audit records and explicitly marked demo accounts; it never resets the existing administrator. Its temporary admin account is deleted afterward.
+
+The existing `admin-user@gmail.com` account was updated with the operator-authorized password from the ignored local `.env`; its approved admin profile and sign-in were verified. The password is never recorded in this repository. The farmer and buyer demo logins passed; their current credentials are in the ignored, owner-readable `demo-credentials.local.json`.

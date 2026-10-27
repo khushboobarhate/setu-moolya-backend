@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { validateImages } = require("../middlewares/images");
 const buyerController = require("../controllers/buyerController");
 const { authenticate, authorize, requireApproved, requirePasswordChanged } = require("../middlewares/authMiddleware");
 const { upload } = require("../config/multer");
@@ -24,6 +25,7 @@ router.post(
     "/register",
     registrationLimit,
     upload.single("photo"),
+    validateImages,
     buyerController.buyerRegister
 );
 

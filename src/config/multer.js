@@ -2,7 +2,6 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { randomUUID } = require("node:crypto");
-const extensions = { "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp" };
 
 // Ensure upload directories exist
 const UPLOAD_ROOT = process.env.SETU_UPLOAD_ROOT || path.join(__dirname, "../../uploads");
@@ -25,7 +24,7 @@ const storage = multer.diskStorage({
         cb(null, UPLOAD_DIR);
     },
     filename: (req, file, cb) => {
-        cb(null, `photo-${randomUUID()}${extensions[file.mimetype]}`);
+        cb(null, `photo-${randomUUID()}.webp`);
     }
 });
 
@@ -37,7 +36,7 @@ const cropStorage = multer.diskStorage({
         cb(null, CROP_UPLOAD_DIR);
     },
     filename: (req, file, cb) => {
-        cb(null, `crop-${randomUUID()}${extensions[file.mimetype]}`);
+        cb(null, `crop-${randomUUID()}.webp`);
     }
 });
 
@@ -77,6 +76,10 @@ const uploadCrop = multer({
     storage: cropStorage,
     fileFilter: cropFileFilter,
     limits: {
+        files: 10,
+        fields: 12,
+        parts: 22,
+        fieldSize: 16 * 1024,
         fileSize: 10 * 1024 * 1024 // 10 MB max per crop photo
     }
 });

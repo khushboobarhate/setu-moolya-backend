@@ -5,10 +5,10 @@ const config = require("../src/config/supabase");
 
 // Mock external Supabase/SMTP boundaries; exercise the real HTTP routes,
 // validation, role guards, controllers, credential generation and email builders.
-let profiles, requests, users, sessions, recoveryTokens, emails, emailOk, failFinalize, authFailure;
+let profiles, requests, users, sessions, recoveryTokens, emails, emailOk, failFinalize, authFailure, delayedTrigger;
 const adminId = randomUUID();
 const sessionFor = (user) => {
-    const token = randomUUID();
+    const token = `fixture.${Buffer.from(JSON.stringify({ app_metadata: user.app_metadata || {} })).toString("base64url")}.${randomUUID()}`;
     sessions.set(token, user.id);
     return { access_token: token, refresh_token: randomUUID(), expires_in: 3600 };
 };
@@ -41,8 +41,8 @@ const adminAuth = {
         const user = { id: randomUUID(), ...structuredClone(payload) };
         users.set(user.id, user);
         profiles.set(user.id, {
-            id: user.id, email: user.email, role: user.app_metadata.role, is_approved: false,
-            registration_request_id: user.app_metadata.registration_request_id
+            id: user.id, email: user.email, role: delayedTrigger ? "farmer" : user.app_metadata.role, is_approved: false,
+            registration_request_id: delayedTrigger ? null : user.app_metadata.registration_request_id
         });
         return { data: { user }, error: null };
     },
@@ -77,7 +77,7 @@ after(async () => { mock.restoreAll(); await new Promise((resolve) => server.clo
 beforeEach(() => {
     mock.restoreAll();
     profiles = new Map(); requests = new Map(); users = new Map(); sessions = new Map(); recoveryTokens = new Map(); emails = [];
-    emailOk = true; failFinalize = false; authFailure = false;
+    emailOk = true; failFinalize = false; authFailure = false; delayedTrigger = false;
     emailService.isEmailConfigured = true;
     const admin = { id: adminId, email: "admin@example.com", password: "Admin-password1!", app_metadata: {} };
     users.set(adminId, admin);
@@ -96,6 +96,7 @@ beforeEach(() => {
         return request;
     });
     mock.method(UserModel, "findRegistrationRequestById", async (id) => structuredClone(requests.get(id)) || null);
+    mock.method(UserModel, "linkPendingProfile", async (id, request) => { const profile = profiles.get(id); assert.equal(profile.is_approved, false); assert.equal(profile.registration_request_id, null); Object.assign(profile, { role: request.role, registration_request_id: request.id }); return profile; });
     mock.method(UserModel, "findByRegistrationRequestId", async (id) => [...profiles.values()].find((p) => p.registration_request_id === id) || null);
     mock.method(UserModel, "claimRegistrationRequest", async (id, token) => {
         const request = requests.get(id);
@@ -131,7 +132,7 @@ const api = async (url, body, token, method = body === undefined ? "GET" : "POST
     }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json() };
 };
-const form = (role, extra = {}) => ({ full_name: "Test Applicant", email: `${role}@example.com`, mobile_number: "98765 43210", state: "Maharashtra", city: "Pune", full_address: "12 Market Road", ...(role === "farmer" ? { land_location: "Village Plot 4" } : {}), ...extra });
+const form = (role, extra = {}) => ({ full_name: "Test Applicant", email: `${role}@example.com`, mobile_number: "9876543210", state: "Maharashtra", city: "Pune", full_address: "12 Market Road", ...(role === "farmer" ? { land_location: "Village Plot 4" } : {}), ...extra });
 const submit = async (role = "farmer", extra) => {
     const response = await api(`/api/${role}/register`, form(role, extra));
     assert.equal(response.status, 201);
@@ -257,7 +258,7 @@ test("temporary password expiry and change-password flow are enforced", async ()
     const logged = await api("/api/farmer/login", { email: "farmer@example.com", password: temporary });
     const token = logged.body.data.token;
     const newPassword = "Changed-password123!";
-    assert.equal((await api("/api/farmer/change-password", { current_password: "incorrect", password: newPassword }, token)).status, 401);
+    assert.equal((await api("/api/farmer/change-password", { current_password: "incorrect", password: newPassword }, token)).status, 400);
     assert.equal((await api("/api/farmer/change-password", { current_password: temporary, password: newPassword }, token)).status, 200);
     assert.equal((await api("/api/farmer/login", { email: "farmer@example.com", password: newPassword })).body.data.must_change_password, false);
     const user = [...users.values()].find((u) => u.email === "farmer@example.com");
@@ -292,13 +293,13 @@ test("multipart registration preserves an optional photo for admin review and cl
     const multipart = (values) => {
         const data = new FormData();
         for (const [key, value] of Object.entries(values)) data.set(key, value);
-        data.set("photo", new Blob([Buffer.from("test-photo")], { type: "image/jpeg" }), "untrusted-name.html");
+        data.set("photo", new Blob([require("node:fs").readFileSync(require("node:path").join(__dirname, "../test-support/pixel.jpg"))], { type: "image/jpeg" }), "untrusted-name.html");
         return data;
     };
     const response = await fetch(base + "/api/farmer/register", { method: "POST", body: multipart(form("farmer")) });
     assert.equal(response.status, 201);
     const body = await response.json();
-    assert.match(body.data.photo_url, /^\/uploads\/photos\/.+\.jpg$/);
+    assert.match(body.data.photo_url, /^\/uploads\/photos\/.+\.webp$/);
     const detail = await api(`/api/admin/requests/${body.data.request_id}`, undefined, "admin-token");
     assert.equal(detail.body.data.photo_url, body.data.photo_url);
     assert.equal((await fetch(base + body.data.photo_url)).status, 200);
@@ -354,4 +355,61 @@ test("demo setup can recover an interrupted approval without sending email", asy
     failFinalize = false;
     const accounts = await createDemoUsers({ adminEmail: "admin@example.com" });
     assert.equal(accounts.length, 2); assert.equal(users.size, 3); assert.equal(emails.length, 0);
+});
+
+test('registration requires exactly ten mobile digits and meaningful bounded addresses', async () => {
+    for (const mobile_number of ['123456789', '12345678901', '+919876543210', '98765 43210', '987654321x']) {
+        assert.equal((await api('/api/farmer/register', form('farmer', { mobile_number }))).status, 400);
+    }
+    for (const changes of [{full_address:'x'}, {state:' '}, {city:'A'}, {full_name:'A'}, {preferred_language:'invalid'}]) {
+        limits.registrationLimit.resetKey('127.0.0.1');
+        assert.equal((await api('/api/buyer/register', form('buyer', changes))).status, 400);
+    }
+    assert.equal(requests.size, 0);
+});
+test('disguised image contents are rejected and cannot remain in public uploads', async () => {
+    const { readdir } = require('node:fs/promises');
+    const { UPLOAD_DIR } = require('../src/config/multer');
+    const before = await readdir(UPLOAD_DIR);
+    const data = new FormData(); Object.entries(form('farmer')).forEach(([key, value]) => data.set(key, value));
+    data.set('photo', new Blob(['<script>alert(1)</script>'], {type:'image/jpeg'}), 'attack.jpg');
+    const response = await fetch(base + '/api/farmer/register', {method:'POST',body:data});
+    assert.equal(response.status,400); assert.deepEqual(await readdir(UPLOAD_DIR), before); assert.equal(requests.size,0);
+});
+test('admin profile is backend-authorized and forged role metadata cannot elevate applicants', async () => {
+    const profile = await api('/api/admin/profile', undefined, 'admin-token');
+    assert.equal(profile.status,200); assert.equal(profile.body.data.role,'admin'); assert.equal(profile.body.data.is_approved,true);
+    const id = await submit('buyer', {role:'admin',is_approved:true}); await approve(id);
+    const logged = await api('/api/buyer/login',{email:'buyer@example.com', password:emailedPassword()});
+    const token = logged.body.data.token;
+    assert.equal((await api('/api/admin/profile',undefined,token)).status,403);
+    assert.equal((await api('/api/admin/requests',undefined,token)).status,403);
+    assert.equal((await api('/api/farmer/profile',undefined,token)).status,403);
+    assert.equal((await api('/api/admin/login',{email:'buyer@example.com',password:emailedPassword()})).status,403);
+});
+test('password change invalidates previously issued API tokens, including the change session', async () => {
+    const id = await submit(); await approve(id); const password = emailedPassword();
+    const logged = await api('/api/farmer/login',{email:'farmer@example.com',password});
+    const token = logged.body.data.token;
+    assert.equal((await api('/api/farmer/change-password',{current_password:password,password:'Secure-new-password1!'},token)).status,200);
+    assert.equal((await api('/api/farmer/profile',undefined,token)).status,401);
+    const fresh = await api('/api/farmer/login',{email:'farmer@example.com',password:'Secure-new-password1!'});
+    assert.equal((await api('/api/farmer/profile',undefined,fresh.body.data.token)).status,200);
+});
+test('JSON parser errors and array bodies return clean client errors with security headers', async () => {
+    const malformed = await fetch(base+'/api/buyer/register',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"bad"'});
+    assert.equal(malformed.status,400); assert.equal((await malformed.json()).success,false);
+    assert.equal(malformed.headers.get('x-content-type-options'),'nosniff'); assert.equal(malformed.headers.get('x-powered-by'),null);
+    assert.equal((await api('/api/buyer/register',[])).status,400);
+});
+
+test('approval recovers GoTrue profiles created before app metadata, for both farmer and buyer', async () => {
+    delayedTrigger = true;
+    for (const role of ['farmer', 'buyer']) {
+        const id = await submit(role);
+        const result = await approve(id);
+        assert.equal(result.status, 200);
+        const profile = profiles.get(result.body.data.user_id);
+        assert.equal(profile.registration_request_id, id); assert.equal(profile.role, role); assert.equal(profile.is_approved, true);
+    }
 });

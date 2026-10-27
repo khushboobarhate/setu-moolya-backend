@@ -28,17 +28,6 @@ const writeLocalCrops = (crops) => {
     }
 };
 
-const isSchemaError = (err) => {
-    if (!err) return false;
-    const msg = (err.message || "").toLowerCase();
-    return (
-        msg.includes("could not find the table") ||
-        msg.includes("relation") ||
-        msg.includes("schema cache") ||
-        err.code === "PGRST204" ||
-        err.code === "42P01"
-    );
-};
 
 class CropModel {
     /**
@@ -82,9 +71,7 @@ class CropModel {
                 return data;
             }
 
-            if (!isSchemaError(error)) {
-                throw error;
-            }
+            throw error || new Error("Database operation returned no result.");
         }
 
         // Fallback to local store
@@ -110,9 +97,7 @@ class CropModel {
                 return data;
             }
 
-            if (!isSchemaError(error)) {
-                throw error;
-            }
+            throw error || new Error("Database operation returned no result.");
         }
 
         const crops = readLocalCrops();
@@ -141,9 +126,7 @@ class CropModel {
                 return null;
             }
 
-            if (!isSchemaError(error)) {
-                throw error;
-            }
+            throw error || new Error("Database operation returned no result.");
         }
 
         const crops = readLocalCrops();
@@ -168,7 +151,7 @@ class CropModel {
             }
 
             if (search) {
-                query = query.ilike("crop_name", `%${search}%`);
+                query = query.ilike("crop_name", `%${search.replace(/[\\%_]/g, "\\$&")}%`);
             }
 
             const { data, error } = await query;
@@ -176,9 +159,7 @@ class CropModel {
                 return data;
             }
 
-            if (!isSchemaError(error)) {
-                throw error;
-            }
+            throw error || new Error("Database operation returned no result.");
         }
 
         let crops = readLocalCrops().filter((c) => c.status === "available");
@@ -218,15 +199,13 @@ class CropModel {
                 .eq("id", cropId)
                 .eq("farmer_id", farmerId)
                 .select()
-                .single();
+                .maybeSingle();
 
             if (!error && data) {
                 return data;
             }
 
-            if (!isSchemaError(error)) {
-                throw error;
-            }
+            throw error || new Error("Database operation returned no result.");
         }
 
         const crops = readLocalCrops();
@@ -250,15 +229,14 @@ class CropModel {
                 .eq("id", cropId)
                 .eq("farmer_id", farmerId)
                 .select()
-                .single();
+                .maybeSingle();
 
             if (!error && data) {
                 return true;
             }
 
-            if (!isSchemaError(error)) {
-                throw error;
-            }
+            if (error) throw error;
+            return false;
         }
 
         const crops = readLocalCrops();

@@ -177,6 +177,15 @@ class UserModel {
         return data;
     }
 
+    static async linkPendingProfile(userId, request) {
+        const { data, error } = await supabaseAdmin.from('profiles')
+            .update({ registration_request_id: request.id, role: request.role })
+            .eq('id', userId).eq('is_approved', false).is('registration_request_id', null)
+            .select().single();
+        if (error) throw error;
+        return data;
+    }
+
     static async findActiveRegistrationByEmail(email) {
         const { data, error } = await supabaseAdmin.from("registration_requests")
             .select("*").eq("email", email).in("status", [REG_STATUS.PENDING, REG_STATUS.APPROVED]).maybeSingle();

@@ -52,4 +52,6 @@ const buildPasswordResetEmail = ({ fullName, resetUrl }) => email(
     resetUrl, "Set a new password"
 );
 
-module.exports = { sendEmail, buildApprovalEmail, buildRejectionEmail, buildPasswordResetEmail, isEmailConfigured };
+const verifyEmailConnection = async () => transporter ? transporter.verify() : false;
+
+module.exports = { verifyEmailConnection, sendEmail, buildApprovalEmail, buildRejectionEmail, buildPasswordResetEmail, isEmailConfigured };
