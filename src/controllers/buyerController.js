@@ -1,4 +1,4 @@
-const { isUuid, validText, availabilityValue } = require("../utils/validation");
+const { isUuid, validText, availabilityValue, LANGUAGES } = require("../utils/validation");
 const { UserModel, ROLES } = require("../models/userModel");
 const { CropModel } = require("../models/cropModel");
 const { InterestModel } = require("../models/interestModel");
@@ -36,6 +36,26 @@ const getBuyerProfile = async (req, res) => {
         });
     } catch (error) {
         return res.status(500).json({ success: false, message: "Failed to fetch buyer profile." });
+    }
+};
+
+const updateBuyerProfile = async (req, res) => {
+    try {
+        const { preferred_language } = req.body || {};
+        if (preferred_language && !LANGUAGES.includes(preferred_language)) {
+            return res.status(400).json({ success: false, message: "Choose a supported language: en, hi, gu, or mr." });
+        }
+        const updates = {};
+        if (preferred_language) updates.preferred_language = preferred_language;
+        const updated = await UserModel.updateProfile(req.user.id, updates);
+        return res.status(200).json({
+            success: true,
+            message: "Buyer profile updated successfully.",
+            data: updated
+        });
+    } catch (error) {
+        console.error("Update buyer profile failed:", error.message);
+        return res.status(500).json({ success: false, message: "Failed to update profile." });
     }
 };
 
@@ -402,6 +422,7 @@ module.exports = {
     buyerRegister,
     buyerLogin,
     getBuyerProfile,
+    updateBuyerProfile,
     getCallAvailability,
     setCallAvailability,
     getAvailableCrops,

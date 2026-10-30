@@ -8,6 +8,8 @@ const { ROLES } = require('../models/userModel');
 const accountAuth = [authenticate, authorize(ROLES.ADMIN)];
 router.post('/login', loginLimit, admin.adminLogin);
 router.get('/profile', accountAuth, admin.getAdminProfile);
+router.patch('/profile', accountAuth, admin.updateAdminProfile);
+router.put('/profile', accountAuth, admin.updateAdminProfile);
 router.post('/change-password', accountAuth, passwordLimit, changePassword);
 // Route/body/query role values never grant this privilege. The database profile
 // and verified Supabase identity are checked before every administrative action.

@@ -84,9 +84,53 @@ const uploadCrop = multer({
     }
 });
 
+const uploadAiImage = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error("Only JPEG, PNG, and WEBP crop photos are allowed."), false);
+        }
+    },
+    limits: {
+        files: 1,
+        fileSize: 10 * 1024 * 1024 // 10 MB max
+    }
+});
+
+const uploadAiAudio = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = [
+            "audio/webm",
+            "audio/wav",
+            "audio/x-wav",
+            "audio/mpeg",
+            "audio/mp3",
+            "audio/mp4",
+            "audio/m4a",
+            "audio/ogg",
+            "application/octet-stream"
+        ];
+        if (allowedTypes.includes(file.mimetype) || file.mimetype.startsWith("audio/")) {
+            cb(null, true);
+        } else {
+            cb(new Error("Only standard audio recordings (WebM, WAV, MP3, MP4, M4A, OGG) are allowed."), false);
+        }
+    },
+    limits: {
+        files: 1,
+        fileSize: 25 * 1024 * 1024 // 25 MB max
+    }
+});
+
 module.exports = {
     upload,
     uploadCrop,
+    uploadAiImage,
+    uploadAiAudio,
     UPLOAD_DIR,
     CROP_UPLOAD_DIR
 };

@@ -2,8 +2,10 @@ const express = require("express");
 const router = express.Router();
 const { validateImages } = require("../middlewares/images");
 const farmerController = require("../controllers/farmerController");
+const farmerAiController = require("../controllers/farmerAiController");
+const callRequestController = require("../controllers/callRequestController");
 const { authenticate, authorize, requireApproved, requirePasswordChanged } = require("../middlewares/authMiddleware");
-const { upload, uploadCrop } = require("../config/multer");
+const { upload, uploadCrop, uploadAiImage, uploadAiAudio } = require("../config/multer");
 const { ROLES } = require("../models/userModel");
 
 // Common guard for farmer protected routes
@@ -49,6 +51,8 @@ router.post("/change-password", accountAuth, passwordLimit, changePassword);
  * @access  Protected (Farmer, Approved)
  */
 router.get("/profile", accountAuth, farmerController.getFarmerProfile);
+router.patch("/profile", accountAuth, farmerController.updateFarmerProfile);
+router.put("/profile", accountAuth, farmerController.updateFarmerProfile);
 
 // ----------------------------------------------------------------
 // CALL AVAILABILITY
@@ -138,5 +142,83 @@ router.get("/interests", farmerAuth, farmerController.getFarmerInterests);
  */
 router.post("/calls/initiate", farmerAuth, farmerController.callBuyer);
 router.post("/calls", farmerAuth, farmerController.callBuyer);
+
+// ----------------------------------------------------------------
+// BUYER-FARMER CALL REQUEST & APPROVAL (FARMER SIDE)
+// ----------------------------------------------------------------
+
+/**
+ * @route   GET /api/farmer/calls/requests
+ * @desc    Farmer views incoming call requests with pending count badge
+ * @access  Protected (Farmer, Approved)
+ */
+router.get("/calls/requests", farmerAuth, callRequestController.farmerListCallRequests);
+
+/**
+ * @route   POST /api/farmer/calls/requests/:id/approve
+ * @desc    Farmer approves a pending call request
+ * @access  Protected (Farmer, Approved)
+ */
+router.post("/calls/requests/:id/approve", farmerAuth, callRequestController.farmerApproveCallRequest);
+
+/**
+ * @route   POST /api/farmer/calls/requests/:id/reject
+ * @desc    Farmer rejects a pending call request
+ * @access  Protected (Farmer, Approved)
+ */
+router.post("/calls/requests/:id/reject", farmerAuth, callRequestController.farmerRejectCallRequest);
+
+// ----------------------------------------------------------------
+// FARMER AI AGENT ENDPOINTS (FARMER-EXCLUSIVE)
+// ----------------------------------------------------------------
+
+/**
+ * @route   POST /api/farmer/ai/chat
+ * @desc    Conversational agricultural Q&A in farmer's selected language
+ * @access  Protected (Farmer, Approved)
+ */
+router.post("/ai/chat", farmerAuth, farmerAiController.askAi);
+
+/**
+ * @route   POST /api/farmer/ai/crop-analysis
+ * @desc    Multimodal crop photo disease diagnosis & health analysis
+ * @access  Protected (Farmer, Approved)
+ */
+router.post("/ai/crop-analysis", farmerAuth, uploadAiImage.single("image"), farmerAiController.analyzeCrop);
+
+/**
+ * @route   POST /api/farmer/ai/transcribe
+ * @desc    Speech-to-text voice recording transcription
+ * @access  Protected (Farmer, Approved)
+ */
+router.post("/ai/transcribe", farmerAuth, uploadAiAudio.single("audio"), farmerAiController.transcribeAudio);
+
+/**
+ * @route   GET /api/farmer/ai/tts
+ * @desc    Text-to-speech audio stream for farmer voice output
+ * @access  Protected (Farmer, Approved)
+ */
+router.get("/ai/tts", farmerAuth, farmerAiController.getTtsAudio);
+
+/**
+ * @route   GET /api/farmer/ai/market-intelligence
+ * @desc    APMC mandi benchmark prices, industrial uses, buyers, regional comparisons
+ * @access  Protected (Farmer, Approved)
+ */
+router.get("/ai/market-intelligence", farmerAuth, farmerAiController.getMarketIntelligence);
+
+/**
+ * @route   POST /api/farmer/ai/calculate-profit
+ * @desc    Mathematical crop profit calculation engine
+ * @access  Protected (Farmer, Approved)
+ */
+router.post("/ai/calculate-profit", farmerAuth, farmerAiController.calculateProfit);
+
+/**
+ * @route   PATCH /api/farmer/ai/onboarding
+ * @desc    Store AI onboarding completed state against farmer profile
+ * @access  Protected (Farmer, Approved)
+ */
+router.patch("/ai/onboarding", farmerAuth, farmerAiController.updateOnboarding);
 
 module.exports = router;

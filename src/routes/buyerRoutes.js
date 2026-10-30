@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { validateImages } = require("../middlewares/images");
 const buyerController = require("../controllers/buyerController");
+const callRequestController = require("../controllers/callRequestController");
 const { authenticate, authorize, requireApproved, requirePasswordChanged } = require("../middlewares/authMiddleware");
 const { upload } = require("../config/multer");
 const { ROLES } = require("../models/userModel");
@@ -49,6 +50,8 @@ router.post("/change-password", accountAuth, passwordLimit, changePassword);
  * @access  Protected (Buyer, Approved)
  */
 router.get("/profile", accountAuth, buyerController.getBuyerProfile);
+router.patch("/profile", accountAuth, buyerController.updateBuyerProfile);
+router.put("/profile", accountAuth, buyerController.updateBuyerProfile);
 
 // ----------------------------------------------------------------
 // CALL AVAILABILITY
@@ -71,7 +74,7 @@ router.patch("/availability", buyerAuth, buyerController.setCallAvailability);
 router.put("/availability", buyerAuth, buyerController.setCallAvailability);
 
 // ----------------------------------------------------------------
-// CROP BROWSING
+// CROP CATALOG & MARKETPLACE
 // ----------------------------------------------------------------
 
 /**
@@ -79,7 +82,7 @@ router.put("/availability", buyerAuth, buyerController.setCallAvailability);
  * @desc    View all available crops uploaded by farmers with photos, quantity,
  *          crop type (organic/inorganic), price, description, farmer availability, and ratings
  * @access  Protected (Buyer, Approved)
- * @query   crop_type ("organic"|"inorganic"), search
+ * @query   type (organic / inorganic), search (crop name), sort
  */
 router.get("/crops", buyerAuth, buyerController.getAvailableCrops);
 
@@ -91,7 +94,7 @@ router.get("/crops", buyerAuth, buyerController.getAvailableCrops);
 router.get("/crops/:cropId", buyerAuth, buyerController.getCropDetail);
 
 // ----------------------------------------------------------------
-// BUYER INTEREST & RATING SYSTEM
+// INTEREST & RATINGS
 // ----------------------------------------------------------------
 
 /**
@@ -111,8 +114,30 @@ router.post("/crops/:cropId/rate", buyerAuth, buyerController.expressInterest);
 router.get("/interests", buyerAuth, buyerController.getMyInterests);
 
 // ----------------------------------------------------------------
-// BUYER-TO-FARMER CALLING
+// BUYER-TO-FARMER CALLING & APPROVAL REQUESTS
 // ----------------------------------------------------------------
+
+/**
+ * @route   POST /api/buyer/calls/request
+ * @desc    Submit a call request to a farmer.
+ *          Farmer phone is not revealed until approved by the farmer.
+ * @access  Protected (Buyer, Approved)
+ */
+router.post("/calls/request", buyerAuth, callRequestController.buyerCreateCallRequest);
+
+/**
+ * @route   GET /api/buyer/calls/requests
+ * @desc    Get buyer's submitted call requests and contact info if approved
+ * @access  Protected (Buyer, Approved)
+ */
+router.get("/calls/requests", buyerAuth, callRequestController.buyerListCallRequests);
+
+/**
+ * @route   GET /api/buyer/calls/requests/:id
+ * @desc    Get single call request detail
+ * @access  Protected (Buyer, Approved)
+ */
+router.get("/calls/requests/:id", buyerAuth, callRequestController.buyerGetCallRequestDetail);
 
 /**
  * @route   POST /api/buyer/calls/initiate

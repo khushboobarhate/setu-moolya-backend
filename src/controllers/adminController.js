@@ -6,10 +6,29 @@ const emailService = require("../config/email");
 const { CallModel } = require("../models/callModel");
 const { CropModel } = require("../models/cropModel");
 const { login } = require("./accountController");
-const { pagination, isUuid, normalizeEmail, isEmail, text } = require("../utils/validation");
+const { pagination, isUuid, normalizeEmail, isEmail, text, LANGUAGES } = require("../utils/validation");
 
 const adminLogin = login(ROLES.ADMIN);
-const getAdminProfile = (req, res) => res.status(200).json({ success: true, data: { id: req.user.id, email: req.user.email, full_name: req.user.profile.full_name, role: req.user.role, is_approved: req.user.is_approved, must_change_password: req.user.must_change_password } });
+const getAdminProfile = (req, res) => res.status(200).json({ success: true, data: { id: req.user.id, email: req.user.email, full_name: req.user.profile.full_name, role: req.user.role, is_approved: req.user.is_approved, must_change_password: req.user.must_change_password, preferred_language: req.user.profile.preferred_language || "en" } });
+const updateAdminProfile = async (req, res) => {
+    try {
+        const { preferred_language } = req.body || {};
+        if (preferred_language && !LANGUAGES.includes(preferred_language)) {
+            return res.status(400).json({ success: false, message: "Choose a supported language: en, hi, gu, or mr." });
+        }
+        const updates = {};
+        if (preferred_language) updates.preferred_language = preferred_language;
+        const updated = await UserModel.updateProfile(req.user.id, updates);
+        return res.status(200).json({
+            success: true,
+            message: "Admin profile updated successfully.",
+            data: updated
+        });
+    } catch (error) {
+        console.error("Update admin profile failed:", error.message);
+        return res.status(500).json({ success: false, message: "Failed to update profile." });
+    }
+};
 const publicRequest = ({ review_token, review_started_at, ...request }) => ({
     ...request, is_processing: Boolean(review_token && Date.parse(review_started_at) > Date.now() - 10 * 60 * 1000)
 });
@@ -209,4 +228,4 @@ const listAllCallLogs = async (req, res) => {
     }
 };
 
-module.exports = { adminLogin, getAdminProfile, getDashboard, approveRequest, sendCredentials, rejectRequest, updateRequestEmail, getRequestDetail, listApprovedUsers, listAllCrops, listAllCallLogs };
+module.exports = { adminLogin, getAdminProfile, updateAdminProfile, getDashboard, approveRequest, sendCredentials, rejectRequest, updateRequestEmail, getRequestDetail, listApprovedUsers, listAllCrops, listAllCallLogs };
